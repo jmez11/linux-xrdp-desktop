@@ -2,13 +2,16 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1. Desktop environment, XRDP, and GPU/Hardware acceleration packages
+# 1. Desktop environment and GPU/Hardware acceleration packages
 #    Notes: libgl1-mesa-glx is not shipped in Ubuntu 24.04 (superseded by libgl1);
 #    pulseaudio-module-xrdp is not packaged in 24.04 either and is built from
-#    source in step 3 below.
+#    source in step 3 below; xrdp/xorgxrdp are built from source with x264 in
+#    step 1b (Ubuntu's xrdp 0.9.24 has no H.264 support at all), so xserver-xorg-core
+#    (pulled in by xorgxrdp's apt package) and libx264-164 (the encoder runtime)
+#    are installed explicitly here.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    xrdp \
-    xorgxrdp \
+    xserver-xorg-core \
+    libx264-164 \
     xfce4 \
     xfce4-goodies \
     x11-xserver-utils \
@@ -46,6 +49,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice \
     blender \
     glmark2-x11 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 1b. Build xrdp 0.10.3 + xorgxrdp 0.10.3 from source with x264 H.264 encoding.
+#     This is the fix for choppy video and laggy window drags: H.264 is a real
+#     video codec with temporal compression, while RFX (all Ubuntu's xrdp 0.9.24
+#     offers) re-encodes every frame as a still image. Configure flags mirror
+#     Ubuntu's own xrdp build (debian/rules from xrdp_0.9.24-4) plus --enable-x264.
+#     Installed to distro paths (/usr/sbin, /etc/xrdp) so the config steps below
+#     and the entrypoint keep working unchanged. Build deps are purged in-layer.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential autoconf automake libtool pkg-config nasm \
+        libx264-dev libfuse3-dev libjpeg-dev libopus-dev libpam0g-dev libssl-dev \
+        libx11-dev libxfixes-dev libxrandr-dev \
+        xserver-xorg-dev libgbm-dev libepoxy-dev libegl1-mesa-dev \
+    && mkdir -p /tmp/xrdp-build && cd /tmp/xrdp-build \
+    && curl -fsSL -o xrdp.tar.gz https://github.com/neutrinolabs/xrdp/releases/download/v0.10.3/xrdp-0.10.3.tar.gz \
+    && tar xzf xrdp.tar.gz && cd xrdp-0.10.3 \
+    && ./configure \
+        --prefix=/usr --sysconfdir=/etc --localstatedir=/var \
+        --with-socketdir=/run/xrdp/sockdir \
+        --enable-ipv6 --enable-jpeg --enable-fuse --enable-rfxcodec \
+        --enable-opus --enable-painter --enable-vsock --enable-x264 \
+    && make -j"$(nproc)" && make install \
+    && cd /tmp/xrdp-build \
+    && curl -fsSL -o xorgxrdp.tar.gz https://github.com/neutrinolabs/xorgxrdp/archive/refs/tags/v0.10.3.tar.gz \
+    && tar xzf xorgxrdp.tar.gz && cd xorgxrdp-0.10.3 \
+    && ./bootstrap && ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var \
+    && make -j"$(nproc)" && make install \
+    && ldd /usr/sbin/xrdp | grep -q libx264 \
+    && cd / && rm -rf /tmp/xrdp-build \
+    && apt-get purge -y build-essential autoconf automake libtool pkg-config nasm \
+        libx264-dev libfuse3-dev libjpeg-dev libopus-dev libpam0g-dev libssl-dev \
+        libx11-dev libxfixes-dev libxrandr-dev \
+        xserver-xorg-dev libgbm-dev libepoxy-dev libegl1-mesa-dev \
+    && apt-get autoremove -y --purge \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Third-party apps via their own APT repos (Ubuntu's firefox/chromium are
@@ -112,7 +150,7 @@ RUN sed -i 's/^; exit-idle-time = 20/exit-idle-time = -1/' /etc/pulse/daemon.con
 RUN openssl req -x509 -newkey rsa:2048 -nodes \
     -keyout /etc/xrdp/key.pem -out /etc/xrdp/cert.pem \
     -days 3650 -subj "/CN=rdp-container" && \
-    chown xrdp:xrdp /etc/xrdp/key.pem /etc/xrdp/cert.pem && \
+    chown root:root /etc/xrdp/key.pem /etc/xrdp/cert.pem && \
     chmod 600 /etc/xrdp/key.pem
 
 # 9. Desktop wow factor: wallpaper + first-run beautification script
