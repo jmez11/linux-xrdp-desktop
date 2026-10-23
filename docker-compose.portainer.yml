@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  remote-desktop:
+    image: ghcr.io/jmez11/linux-xrdp-desktop:latest
+    container_name: linux-rdp
+    restart: unless-stopped
+    ports:
+      - "3389:3389"
+    environment:
+      - RDP_USER=engineer
+      - RDP_PASS=SuperSecurePass987!
+      - TZ=UTC
+      # Set to 'iHD' for Intel, 'radeonsi' for AMD. Omit if using NVIDIA.
+      - LIBVA_DRIVER_NAME=iHD
+    # 2GB shared memory is required to prevent Xorg crashing across multi-monitor setups
+    shm_size: '2gb'
+    devices:
+      - /dev/dri:/dev/dri
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - rdp_home:/home/engineer
+
+volumes:
+  rdp_home:
+    driver: local

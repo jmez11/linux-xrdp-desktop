@@ -1,0 +1,54 @@
+#!/bin/bash
+set -e
+
+USERNAME=${RDP_USER:-desktopuser}
+PASSWORD=${RDP_PASS:-ChangeMe123!}
+
+# Create isolated local user if missing
+if ! id -u "$USERNAME" >/dev/null 2>&1; then
+    useradd -m -s /bin/bash "$USERNAME"
+    echo "$USERNAME:$PASSWORD" | chpasswd
+    usermod -aG sudo "$USERNAME"
+    usermod -aG video,render,audio "$USERNAME" 2>/dev/null || true
+
+    # User Xsession initialization: start PulseAudio and XFCE under DBus
+    cat << 'EOF' > "/home/$USERNAME/.xsession"
+#!/bin/bash
+pulseaudio --start --exit-idle-time=-1 2>/dev/null || true
+pacmd set-default-sink xrdp-sink 2>/dev/null || true
+pacmd set-default-source xrdp-source 2>/dev/null || true
+exec dbus-launch --exit-with-session startxfce4
+EOF
+    chmod +x "/home/$USERNAME/.xsession"
+    chown "$USERNAME:$USERNAME" "/home/$USERNAME/.xsession"
+fi
+
+# Dynamically map host DRI render node GID to avoid permission errors
+if [ -e /dev/dri/renderD128 ]; then
+    RENDER_GID=$(stat -c '%g' /dev/dri/renderD128)
+    if ! getent group "$RENDER_GID" >/dev/null; then
+        groupadd -g "$RENDER_GID" host-render 2>/dev/null || true
+    fi
+    RENDER_GROUP_NAME=$(getent group "$RENDER_GID" | cut -d: -f1)
+    usermod -aG "$RENDER_GROUP_NAME" "$USERNAME" 2>/dev/null || true
+fi
+
+# Configure VirtualGL headless EGL display
+/opt/VirtualGL/bin/vglserver_config -config +s +f +t 2>/dev/null || true
+cat << 'EOF' > /etc/profile.d/virtualgl.sh
+export PATH="/opt/VirtualGL/bin:$PATH"
+export VGL_DISPLAY="egl"
+export VGL_COMPRESS="proxy"
+export VGL_FPS="60"
+EOF
+chmod +x /etc/profile.d/virtualgl.sh
+
+adduser "$USERNAME" ssl-cert 2>/dev/null || true
+
+# Clean stale sockets/locks
+mkdir -p /var/run/xrdp/pulse
+chmod 777 /var/run/xrdp/pulse
+rm -rf /var/run/xrdp/* /tmp/.X* /tmp/.xrdp*
+
+/usr/sbin/xrdp-sesman
+exec /usr/sbin/xrdp --nodaemon
