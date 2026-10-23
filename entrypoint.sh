@@ -23,6 +23,16 @@ EOF
     chown "$USERNAME:$USERNAME" "/home/$USERNAME/.xsession"
 fi
 
+# The home directory is typically a Docker named volume, which mounts
+# root-owned; useradd does not re-chown an existing mountpoint. The RDP
+# session runs as the user and must be able to write here (Xorg log file,
+# .Xauthority, XFCE config). Without this, Xorg fatals on startup with
+# "Cannot open log file" (exit code 1, no log written) and sesman reports
+# "Timed out waiting for X server" / "Error connecting to user session".
+if [ -d "/home/$USERNAME" ]; then
+    chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
+fi
+
 # Dynamically map host DRI render node GID to avoid permission errors
 if [ -e /dev/dri/renderD128 ]; then
     RENDER_GID=$(stat -c '%g' /dev/dri/renderD128)
