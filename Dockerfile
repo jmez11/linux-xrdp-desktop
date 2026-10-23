@@ -39,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #    compiled against this release's exact PulseAudio sources (internal module API).
 #    Build dependencies are purged in the same layer so the final image stays lean.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential git autoconf libtool pkg-config meson ninja-build \
+        build-essential git autoconf libtool pkg-config meson ninja-build libpulse-dev \
     && sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources \
     && apt-get update \
     && apt-get build-dep -y pulseaudio \
@@ -50,7 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && cd /tmp/pa-build/pa-module-xrdp && ./bootstrap && ./configure PULSE_DIR="$PA_SRC" && make && make install \
     && ls "$(pkg-config --variable=modlibexecdir libpulse)" | grep -q xrdp \
     && cd / && rm -rf /tmp/pa-build \
-    && apt-get purge -y build-essential git autoconf libtool pkg-config meson ninja-build \
+    && apt-get purge -y build-essential git autoconf libtool pkg-config meson ninja-build libpulse-dev \
     && apt-get autoremove -y --purge \
     && rm -rf /var/lib/apt/lists/*
 
