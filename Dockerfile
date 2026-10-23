@@ -12,6 +12,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xserver-xorg-core \
     libx264-164 \
+    libfuse3-3 \
+    libopus0 \
     xfce4 \
     xfce4-goodies \
     x11-xserver-utils \
@@ -84,7 +86,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libx11-dev libxfixes-dev libxrandr-dev \
         xserver-xorg-dev libgbm-dev libepoxy-dev libegl1-mesa-dev \
     && apt-get autoremove -y --purge \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && if ldd /usr/sbin/xrdp /usr/sbin/xrdp-sesman /usr/sbin/xrdp-chansrv /usr/libexec/xrdp/xrdp-sesexec 2>/dev/null | grep -q "not found"; then echo "FATAL: xrdp binaries have missing shared libraries"; ldd /usr/sbin/xrdp-chansrv | grep "not found"; exit 1; fi
 
 # 2. Third-party apps via their own APT repos (Ubuntu's firefox/chromium are
 #    snaps, which don't work in containers): Firefox (Mozilla) and VS Code.
