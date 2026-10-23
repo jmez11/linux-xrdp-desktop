@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xfce4 \
     xfce4-goodies \
     x11-xserver-utils \
+    xfonts-base \
     dbus-x11 \
     sudo \
     curl \
