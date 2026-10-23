@@ -46,14 +46,9 @@ Exec=/usr/local/bin/desktop-setup.sh
 X-GNOME-Autostart-enabled=true
 NoDisplay=true
 EOF
-cat > "/home/$USERNAME/.config/autostart/plank.desktop" << 'EOF'
-[Desktop Entry]
-Type=Application
-Name=Plank Dock
-Comment=Application dock
-Exec=plank
-X-GNOME-Autostart-enabled=true
-EOF
+# Plank is gone (it needs a compositor to render, and compositing kills RDP
+# performance); remove the stale autostart entry from existing volumes.
+rm -f "/home/$USERNAME/.config/autostart/plank.desktop"
 chown -R "$USERNAME:$USERNAME" "/home/$USERNAME/.config/autostart"
 
 # Dynamically map host DRI render node GID to avoid permission errors

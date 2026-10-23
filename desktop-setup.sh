@@ -5,7 +5,7 @@
 # own tweaks are never overwritten), then opens a welcome terminal.
 set -u
 
-SENTINEL="$HOME/.config/xrdp-desktop-setup-v1.done"
+SENTINEL="$HOME/.config/xrdp-desktop-setup-v2.done"
 [ -f "$SENTINEL" ] && exit 0
 
 WALLPAPER="/usr/share/backgrounds/xrdp-wow.jpg"
@@ -21,8 +21,10 @@ xfconf-query -c xsettings -p /Net/ThemeName -s "Arc-Dark" 2>/dev/null || true
 xfconf-query -c xsettings -p /Net/IconThemeName -s "Papirus-Dark" 2>/dev/null || true
 xfconf-query -c xfwm4 -p /general/theme -s "Arc-Dark" 2>/dev/null || true
 
-# Compositor on: shadows, transparency, smooth shadows for the wow factor
-xfconf-query -c xfwm4 -p /general/use_compositing -s true 2>/dev/null || true
+# Compositor OFF: software compositing over RDP makes every window drag
+# re-composite and re-encode the full screen (the 1+ second lag). The dark
+# theme + wallpaper carry the look on their own.
+xfconf-query -c xfwm4 -p /general/use_compositing -s false 2>/dev/null || true
 
 # Wallpaper on every monitor / workspace
 if [ -f "$WALLPAPER" ]; then

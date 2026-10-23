@@ -39,7 +39,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     neofetch \
     arc-theme \
     papirus-icon-theme \
-    plank \
     fonts-firacode \
     gimp \
     inkscape \
