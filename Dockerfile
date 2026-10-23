@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # 1. Desktop environment, XRDP, and GPU/Hardware acceleration packages
 #    Notes: libgl1-mesa-glx is not shipped in Ubuntu 24.04 (superseded by libgl1);
 #    pulseaudio-module-xrdp is not packaged in 24.04 either and is built from
-#    source in step 2 below.
+#    source in step 3 below.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xrdp \
     xorgxrdp \
@@ -33,14 +33,44 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pulseaudio-utils \
     pavucontrol \
     alsa-utils \
+    gnupg \
+    git \
+    htop \
+    neofetch \
+    arc-theme \
+    papirus-icon-theme \
+    plank \
+    fonts-firacode \
+    gimp \
+    inkscape \
+    vlc \
+    libreoffice \
+    blender \
+    glmark2-x11 \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Build pulseaudio-module-xrdp from source (neutrinolabs, v0.8).
+# 2. Third-party apps via their own APT repos (Ubuntu's firefox/chromium are
+#    snaps, which don't work in containers): Firefox (Mozilla) and VS Code.
+RUN install -d -m 0755 /etc/apt/keyrings && \
+    curl -fsSL https://packages.mozilla.org/apt/repo-signing-key.gpg \
+        -o /etc/apt/keyrings/packages.mozilla.org.asc && \
+    echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" \
+        > /etc/apt/sources.list.d/mozilla.list && \
+    printf 'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n' \
+        > /etc/apt/preferences.d/mozilla && \
+    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | \
+        gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg && \
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main" \
+        > /etc/apt/sources.list.d/vscode.list && \
+    apt-get update && apt-get install -y --no-install-recommends firefox code && \
+    rm -rf /var/lib/apt/lists/*
+
+# 3. Build pulseaudio-module-xrdp from source (neutrinolabs, v0.8).
 #    Ubuntu 24.04 does not package the XRDP PulseAudio modules, and they must be
 #    compiled against this release's exact PulseAudio sources (internal module API).
 #    Build dependencies are purged in the same layer so the final image stays lean.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential git autoconf libtool pkg-config meson ninja-build libpulse-dev \
+        build-essential autoconf libtool pkg-config meson ninja-build libpulse-dev \
     && sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources \
     && apt-get update \
     && apt-get build-dep -y pulseaudio \
@@ -51,40 +81,45 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && cd /tmp/pa-build/pa-module-xrdp && ./bootstrap && ./configure PULSE_DIR="$PA_SRC" && make && make install \
     && ls "$(pkg-config --variable=modlibexecdir libpulse)" | grep -q xrdp \
     && cd / && rm -rf /tmp/pa-build \
-    && apt-get purge -y build-essential git autoconf libtool pkg-config meson ninja-build libpulse-dev \
+    && apt-get purge -y build-essential autoconf libtool pkg-config meson ninja-build libpulse-dev \
     && apt-get autoremove -y --purge \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. Install VirtualGL for headless 3D/OpenGL hardware offloading
+# 4. Install VirtualGL for headless 3D/OpenGL hardware offloading
 RUN VGL_VER="3.1.1" \
     && curl -fsSL -o /tmp/virtualgl.deb \
        "https://github.com/VirtualGL/virtualgl/releases/download/${VGL_VER}/virtualgl_${VGL_VER}_amd64.deb" \
     && dpkg -i /tmp/virtualgl.deb \
     && rm -f /tmp/virtualgl.deb
 
-# 4. Configure Xorg permissions for non-root execution inside container
+# 5. Configure Xorg permissions for non-root execution inside container
 RUN sed -i 's/allowed_users=console/allowed_users=anybody/' /etc/X11/Xwrapper.config 2>/dev/null || \
     echo "allowed_users=anybody" >> /etc/X11/Xwrapper.config && \
     echo "needs_root_rights=no" >> /etc/X11/Xwrapper.config
 
-# 5. Configure XRDP for Credential Pass-Through, TLS, and Multi-Monitor
+# 6. Configure XRDP for Credential Pass-Through, TLS, and Multi-Monitor
 RUN sed -i 's/^autorun=.*/autorun=Xorg/' /etc/xrdp/xrdp.ini && \
     sed -i 's/^#require_credentials=true/require_credentials=true/' /etc/xrdp/xrdp.ini && \
     sed -i 's/^allow_multimon=false/allow_multimon=true/' /etc/xrdp/xrdp.ini && \
     sed -i 's/^security_layer=negotiate/security_layer=tls/' /etc/xrdp/xrdp.ini
 
-# 6. Configure PulseAudio daemon and XRDP sinks
+# 7. Configure PulseAudio daemon and XRDP sinks
 RUN sed -i 's/^; exit-idle-time = 20/exit-idle-time = -1/' /etc/pulse/daemon.conf && \
     sed -i 's/^; autospawn = yes/autospawn = yes/' /etc/pulse/client.conf && \
     echo "load-module module-xrdp-sink" >> /etc/pulse/default.pa && \
     echo "load-module module-xrdp-source" >> /etc/pulse/default.pa
 
-# 7. Generate TLS Certificate
+# 8. Generate TLS Certificate
 RUN openssl req -x509 -newkey rsa:2048 -nodes \
     -keyout /etc/xrdp/key.pem -out /etc/xrdp/cert.pem \
     -days 3650 -subj "/CN=rdp-container" && \
     chown xrdp:xrdp /etc/xrdp/key.pem /etc/xrdp/cert.pem && \
     chmod 600 /etc/xrdp/key.pem
+
+# 9. Desktop wow factor: wallpaper + first-run beautification script
+COPY assets/wow-wallpaper.jpg /usr/share/backgrounds/xrdp-wow.jpg
+COPY desktop-setup.sh /usr/local/bin/desktop-setup.sh
+RUN chmod +x /usr/local/bin/desktop-setup.sh
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

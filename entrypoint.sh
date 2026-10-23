@@ -33,6 +33,29 @@ if [ -d "/home/$USERNAME" ]; then
     chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
 fi
 
+# Desktop wow factor: first-run beautification script + plank dock, launched
+# via XFCE autostart inside the user session. Written idempotently on every
+# container start; the setup script itself is sentinel-gated.
+mkdir -p "/home/$USERNAME/.config/autostart"
+cat > "/home/$USERNAME/.config/autostart/xrdp-desktop-setup.desktop" << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=XRDP Desktop Setup
+Comment=One-time desktop theming (theme, wallpaper, compositor)
+Exec=/usr/local/bin/desktop-setup.sh
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+EOF
+cat > "/home/$USERNAME/.config/autostart/plank.desktop" << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=Plank Dock
+Comment=Application dock
+Exec=plank
+X-GNOME-Autostart-enabled=true
+EOF
+chown -R "$USERNAME:$USERNAME" "/home/$USERNAME/.config/autostart"
+
 # Dynamically map host DRI render node GID to avoid permission errors
 if [ -e /dev/dri/renderD128 ]; then
     RENDER_GID=$(stat -c '%g' /dev/dri/renderD128)
