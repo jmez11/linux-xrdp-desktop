@@ -14,10 +14,15 @@ Item {
     property real mouseXPos: -1000
     property bool mouseInside: false
     property int baseIconSize: 44
+    property int taskRevision: 0
 
     TaskManager.TasksModel {
         id: tasksModel
         groupMode: TaskManager.TasksModel.GroupApplications
+        onCountChanged: root.taskRevision++
+        onDataChanged: root.taskRevision++
+        onRowsInserted: root.taskRevision++
+        onRowsRemoved: root.taskRevision++
     }
 
     PlasmaCore.DataSource {
@@ -53,14 +58,15 @@ Item {
         ListElement { name: "Trash"; appMatch: "trash"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/places/user-trash-full.svg"; cmd: "dolphin trash:/"; isSeparatorBefore: false }
     }
 
-    function findTaskIndex(matchKey) {
+    function findTaskIndex(matchKey, rev) {
         if (!matchKey || matchKey === "thinclient_drives" || matchKey === "trash") return -1;
         var lowerKey = matchKey.toLowerCase();
         for (var i = 0; i < tasksModel.count; i++) {
             var idx = tasksModel.index(i, 0);
             var appId = (tasksModel.data(idx, TaskManager.AbstractTasksModel.AppId) || "").toString().toLowerCase();
             var appName = (tasksModel.data(idx, TaskManager.AbstractTasksModel.AppName) || "").toString().toLowerCase();
-            if (appId.indexOf(lowerKey) !== -1 || appName.indexOf(lowerKey) !== -1) {
+            var winTitle = (tasksModel.data(idx, Qt.DisplayRole) || "").toString().toLowerCase();
+            if (appId.indexOf(lowerKey) !== -1 || appName.indexOf(lowerKey) !== -1 || winTitle.indexOf(lowerKey) !== -1) {
                 return i;
             }
         }
@@ -130,13 +136,30 @@ Item {
                 }
 
                 property real bounceOffset: 0
-                property bool launched: false
+                property bool launching: false
+                property bool isRunning: root.findTaskIndex(model.appMatch, root.taskRevision) !== -1
+
+                onIsRunningChanged: {
+                    if (isRunning) {
+                        launching = false;
+                        launchTimeout.stop();
+                    }
+                }
+
+                Timer {
+                    id: launchTimeout
+                    interval: 4000
+                    repeat: false
+                    onTriggered: delegateRoot.launching = false
+                }
 
                 Behavior on magScale {
                     NumberAnimation { duration: 80; easing.type: Easing.OutQuad }
                 }
 
                 function triggerBounce() {
+                    launching = true;
+                    launchTimeout.restart();
                     bounceAnim.restart();
                 }
 
@@ -198,9 +221,9 @@ Item {
                     active: root.mouseInside && delegateRoot.dist < 25
                 }
 
-                // Active indicator dot below icon
+                // Active indicator dot below icon (turns off automatically when app closes)
                 Rectangle {
-                    visible: delegateRoot.launched || root.findTaskIndex(model.appMatch) !== -1
+                    visible: delegateRoot.isRunning || delegateRoot.launching
                     width: 4
                     height: 4
                     radius: 2
@@ -239,13 +262,11 @@ Item {
                 var item = dockRepeater.itemAt(i);
                 if (item && pt.x >= item.x && pt.x <= item.x + item.width) {
                     var entry = dockModel.get(i);
-                    var runningIdx = root.findTaskIndex(entry.appMatch);
+                    var runningIdx = root.findTaskIndex(entry.appMatch, root.taskRevision);
                     if (runningIdx !== -1) {
                         var modelIdx = tasksModel.index(runningIdx, 0);
                         tasksModel.requestActivate(modelIdx);
-                        item.launched = true;
                     } else {
-                        item.launched = true;
                         item.triggerBounce();
                         executable.exec(entry.cmd + " >/dev/null 2>&1 &");
                     }
