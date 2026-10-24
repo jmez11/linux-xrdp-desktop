@@ -172,7 +172,7 @@ RUN install -d -m 0755 /etc/apt/keyrings && \
     curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | \
         gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg && \
     echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main" \
-        > /etc/apt/sources.list.d/vscode.list && \
+        > /etc/apt/sources.list.d/vscode.list \
     && apt-get update && apt-get install -y --no-install-recommends firefox code \
     && printf '#!/bin/sh\nmkdir -p "${XDG_RUNTIME_DIR:-/tmp}"\nexec /usr/share/code/code --no-sandbox --disable-gpu-sandbox --disable-dev-shm-usage --password-store=basic "$@"\n' > /usr/local/bin/vscode-launch \
     && chmod +x /usr/local/bin/vscode-launch \
