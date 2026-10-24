@@ -17,8 +17,14 @@ services:
     shm_size: '2gb'
     devices:
       - /dev/dri:/dev/dri
+      # /dev/fuse + SYS_ADMIN: required for xrdp drive redirection (chansrv
+      # mounts client-shared drives via FUSE at ~/thinclient_drives/)
+      - /dev/fuse:/dev/fuse
+    cap_add:
+      - SYS_ADMIN
     security_opt:
       - seccomp:unconfined
+      - apparmor:unconfined
     volumes:
       - rdp_home:/home/engineer
 
