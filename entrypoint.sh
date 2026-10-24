@@ -73,10 +73,21 @@ chmod +x /etc/profile.d/virtualgl.sh
 
 adduser "$USERNAME" ssl-cert 2>/dev/null || true
 
-# Clean stale sockets/locks
+# Clean stale sockets/locks. xrdp 0.10.x keeps its PID files directly under
+# /var/run/ (not /var/run/xrdp/), and a stale one makes sesman refuse to start
+# ("already running"), which then kills xrdp and sends the container into a
+# restart loop. Only remove a PID file if its process is actually gone.
 mkdir -p /var/run/xrdp/pulse
 chmod 777 /var/run/xrdp/pulse
 rm -rf /var/run/xrdp/* /tmp/.X* /tmp/.xrdp*
+for pidfile in /var/run/xrdp-sesman.pid /var/run/xrdp.pid; do
+    if [ -f "$pidfile" ]; then
+        pid=$(cat "$pidfile" 2>/dev/null || echo "")
+        if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+            rm -f "$pidfile"
+        fi
+    fi
+done
 
 /usr/sbin/xrdp-sesman
 exec /usr/sbin/xrdp --nodaemon
