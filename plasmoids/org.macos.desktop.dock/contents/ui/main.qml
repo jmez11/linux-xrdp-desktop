@@ -6,8 +6,9 @@ import org.kde.taskmanager 0.1 as TaskManager
 
 Item {
     id: root
-    width: 1120
-    height: 116
+    anchors.fill: parent
+    implicitWidth: 1040
+    implicitHeight: 116
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
     Plasmoid.preferredRepresentation: Plasmoid.fullRepresentation
 
@@ -73,24 +74,22 @@ Item {
         return -1;
     }
 
-    // Keep the dock widget dynamically centered at the bottom middle of the desktop
+    // Keep the dock applet dynamically centered at the bottom middle of the desktop
     function centerOnDesktop() {
-        var container = root;
-        while (container && container.parent && (container.parent.width < 500 || container.parent.height < 350)) {
-            container = container.parent;
-        }
-        if (container && container.parent && container.parent.width >= 500 && container.parent.height >= 350) {
-            var layout = container.parent;
-            var targetW = Math.min(1040, layout.width - 24);
-            var targetH = 116;
-            var targetX = Math.round((layout.width - targetW) / 2);
-            var targetY = Math.round(layout.height - targetH - 2);
+        var appletItem = root.parent;
+        if (!appletItem) return;
+        var desk = appletItem.parent;
+        if (!desk || desk.width < 500 || desk.height < 350) return;
 
-            if (Math.abs(container.width - targetW) > 2) container.width = targetW;
-            if (Math.abs(container.height - targetH) > 2) container.height = targetH;
-            if (Math.abs(container.x - targetX) > 2) container.x = targetX;
-            if (Math.abs(container.y - targetY) > 2) container.y = targetY;
-        }
+        var targetW = Math.min(1040, Math.round(desk.width - 24));
+        var targetH = 116;
+        var targetX = Math.round((desk.width - targetW) / 2);
+        var targetY = Math.round(desk.height - targetH - 4);
+
+        if (Math.abs(appletItem.width - targetW) > 2) appletItem.width = targetW;
+        if (Math.abs(appletItem.height - targetH) > 2) appletItem.height = targetH;
+        if (Math.abs(appletItem.x - targetX) > 2) appletItem.x = targetX;
+        if (Math.abs(appletItem.y - targetY) > 2) appletItem.y = targetY;
     }
 
     Component.onCompleted: centerOnDesktop()

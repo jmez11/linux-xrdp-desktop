@@ -20,7 +20,7 @@
 #   7. Left-aligned traffic-light window controls (Summaculate Aurorae, XIA).
 set -u
 
-SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v6.done"
+SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v7.done"
 [ -f "$SENTINEL" ] && exit 0
 
 WALLPAPER="/usr/share/backgrounds/xrdp-wow.jpg"
@@ -170,10 +170,11 @@ EOF
 kwriteconfig5 --file konsolerc --group "Desktop Entry" --key DefaultProfile "macOS.profile"
 
 # ---------------------------------------------------------------------------
-# 5. Wait for plasmashell DBus interface to become ready
+# 5. Wait for plasmashell DBus interface and desktop containment to be ready
 # ---------------------------------------------------------------------------
-for _ in $(seq 1 25); do
-    if qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "1;" >/dev/null 2>&1; then
+for _ in $(seq 1 30); do
+    READY=$(qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "desktops().length > 0;" 2>/dev/null || echo "false")
+    if [ "$READY" = "true" ]; then
         break
     fi
     sleep 1
@@ -254,7 +255,7 @@ clock.writeConfig("use24hFormat", 0);
 //   - Automatic icon layout to Top-Right (arrangement = 1 [Columns],
 //     alignment = 1 [Right], sortMode = 1 [Name]) so "System Drive" sits at
 //     top-right
-//   - Top-Left Desktop Widgets: Calendar, Weather (IP-geolocated), Analog Clock
+//   - Top-Left Desktop Widgets: Calendar, Weather, Analog Clock
 //     with macOS widget padding matching the reference screenshot
 //   - Bottom-Center Animated macOS Dock (org.macos.desktop.dock) with unclipped
 //     parabolic magnification and multi-bounce launch animation
@@ -276,29 +277,44 @@ for (var d = 0; d < allDesktops.length; d++) {
     desk.writeConfig("url", "desktop:/");
 
     if (d === 0) {
-        var oldWidgets = desk.widgets();
-        for (var w = 0; w < oldWidgets.length; w++) {
-            oldWidgets[w].remove();
-        }
-        var calW = desk.addWidget("org.macos.desktop.calendar");
-        var weaW = desk.addWidget("org.macos.desktop.weather");
-        var clkW = desk.addWidget("org.macos.desktop.clock");
-        var dockW = desk.addWidget("org.macos.desktop.dock");
-
-        function makeGeom(scrW, scrH) {
-            var dockWidth = Math.min(1020, scrW - 32);
-            var dockX = Math.max(16, Math.round((scrW - dockWidth) / 2));
-            var dockY = Math.max(420, scrH - 120);
-            return "Applet-" + calW.id + ":16,38,184,184,0;" +
-                   "Applet-" + weaW.id + ":204,38,184,184,0;" +
-                   "Applet-" + clkW.id + ":16,226,184,184,0;" +
-                   "Applet-" + dockW.id + ":" + dockX + "," + dockY + "," + dockWidth + ",116,0;";
+        try {
+            var oldWidgets = (typeof desk.widgets === "function") ? desk.widgets() : [];
+            for (var w = 0; w < oldWidgets.length; w++) {
+                if (oldWidgets[w]) {
+                    if (typeof oldWidgets[w].destroy === "function") oldWidgets[w].destroy();
+                    else if (typeof oldWidgets[w].remove === "function") oldWidgets[w].remove();
+                }
+            }
+        } catch (err) {
+            print("Error clearing old widgets: " + err);
         }
 
-        var curG = screenGeometry(desk.screen);
+        var scr = (desk.screen >= 0) ? desk.screen : 0;
+        var curG = screenGeometry(scr);
         var curW = (curG && curG.width > 0) ? curG.width : 1920;
         var curH = (curG && curG.height > 0) ? curG.height : 1080;
 
+        var dockWidth = Math.min(1040, curW - 32);
+        var dockHeight = 116;
+        var dockX = Math.max(16, Math.round((curW - dockWidth) / 2));
+        var dockY = Math.max(420, curH - dockHeight - 4);
+
+        var calW = desk.addWidget("org.macos.desktop.calendar", 16, 38, 184, 184);
+        var weaW = desk.addWidget("org.macos.desktop.weather", 204, 38, 184, 184);
+        var clkW = desk.addWidget("org.macos.desktop.clock", 16, 226, 184, 184);
+        var dockW = desk.addWidget("org.macos.desktop.dock", dockX, dockY, dockWidth, dockHeight);
+
+        function makeGeom(scrW, scrH) {
+            var dw = Math.min(1040, scrW - 32);
+            var dx = Math.max(16, Math.round((scrW - dw) / 2));
+            var dy = Math.max(420, scrH - dockHeight - 4);
+            return "Applet-" + calW.id + ":16,38,184,184,0;" +
+                   "Applet-" + weaW.id + ":204,38,184,184,0;" +
+                   "Applet-" + clkW.id + ":16,226,184,184,0;" +
+                   "Applet-" + dockW.id + ":" + dx + "," + dy + "," + dw + "," + dockHeight + ",0;";
+        }
+
+        desk.currentConfigGroup = ["General"];
         desk.writeConfig("ItemGeometriesHorizontal", makeGeom(curW, curH));
         desk.writeConfig("ItemGeometries-" + curW + "x" + curH, makeGeom(curW, curH));
         var commonRes = [
@@ -315,23 +331,14 @@ for (var d = 0; d < allDesktops.length; d++) {
 EOF
 )
 
-qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "$JS_SCRIPT" >/dev/null 2>&1 || true
-
-# Ensure the bottom dock panel has lengthMode=fit ("Fill Content") in plasmashellrc
-if [ -f "$HOME/.config/plasmashellrc" ]; then
-    sed -i '/\[PlasmaViews\]\[Panel /,/^\s*$/{s/alignment=132/alignment=132\nlengthMode=fit/}' "$HOME/.config/plasmashellrc" 2>/dev/null || true
-fi
+EVAL_LOG=$(qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "$JS_SCRIPT" 2>&1 || true)
+mkdir -p "$HOME/.config"
+echo "evaluateScript result: $EVAL_LOG" >> "$HOME/.config/desktop-setup.log"
 
 # Reload KWin & Plasma settings so fonts, decorations, and icons apply immediately
 qdbus org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
 plasma-apply-colorscheme BreezeDark >/dev/null 2>&1 || true
 /usr/lib/x86_64-linux-gnu/libexec/plasma-changeicons Mkos-Big-Sur >/dev/null 2>&1 || true
-
-# Restart plasmashell cleanly once so Folder View picks up Right/Column icon alignment
-# and exact top-left widget geometries from plasma-org.kde.plasma.desktop-appletsrc
-kquitapp5 plasmashell >/dev/null 2>&1 || killall plasmashell 2>/dev/null || true
-sleep 1
-kstart5 plasmashell >/dev/null 2>&1 || plasmashell >/dev/null 2>&1 &
 
 touch "$SENTINEL"
 
