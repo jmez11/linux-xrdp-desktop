@@ -39,6 +39,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pulseaudio-utils \
     pavucontrol \
     alsa-utils \
+    libopenh264-7 \
+    pipewire \
+    pipewire-bin \
+    libpipewire-0.3-0t64 \
+    libpipewire-0.3-modules \
+    pipewire-v4l2 \
+    wireplumber \
+    xdg-desktop-portal \
+    xdg-desktop-portal-gtk \
+    v4l2-utils \
+    gstreamer1.0-pipewire \
     gnupg \
     git \
     htop \
@@ -54,26 +65,36 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     glmark2-x11 \
     && rm -rf /var/lib/apt/lists/*
 
-# 1b. Build xrdp 0.10.3 + xorgxrdp 0.10.3 from source with x264 H.264 encoding.
+# 1b. Build xrdp 0.10.3 + xorgxrdp 0.10.3 from source with x264 H.264 encoding
+#     and [MS-RDPECAM] PipeWire camera redirection (--enable-rdpecam).
 #     This is the fix for choppy video and laggy window drags: H.264 is a real
 #     video codec with temporal compression, while RFX (all Ubuntu's xrdp 0.9.24
 #     offers) re-encodes every frame as a still image. Configure flags mirror
-#     Ubuntu's own xrdp build (debian/rules from xrdp_0.9.24-4) plus --enable-x264.
+#     Ubuntu's own xrdp build (debian/rules from xrdp_0.9.24-4) plus --enable-x264
+#     and --enable-rdpecam.
 #     Installed to distro paths (/usr/sbin, /etc/xrdp) so the config steps below
 #     and the entrypoint keep working unchanged. Build deps are purged in-layer.
+COPY xrdp-rdpecam /tmp/xrdp-rdpecam
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential autoconf automake libtool pkg-config nasm \
+        build-essential autoconf automake libtool pkg-config nasm patch \
         libx264-dev libfuse3-dev libjpeg-dev libopus-dev libpam0g-dev libssl-dev \
         libx11-dev libxfixes-dev libxrandr-dev \
         xserver-xorg-dev libgbm-dev libepoxy-dev libegl1-mesa-dev \
+        libpipewire-0.3-dev libopenh264-dev \
     && mkdir -p /tmp/xrdp-build && cd /tmp/xrdp-build \
     && curl -fsSL -o xrdp.tar.gz https://github.com/neutrinolabs/xrdp/releases/download/v0.10.3/xrdp-0.10.3.tar.gz \
     && tar xzf xrdp.tar.gz && cd xrdp-0.10.3 \
+    && cp /tmp/xrdp-rdpecam/rdpecam.c /tmp/xrdp-rdpecam/rdpecam.h \
+          /tmp/xrdp-rdpecam/rdpecam_pipewire.c /tmp/xrdp-rdpecam/rdpecam_pipewire.h \
+          sesman/chansrv/ \
+    && patch -p1 < /tmp/xrdp-rdpecam/xrdp-0.10.3-rdpecam.patch \
+    && ./bootstrap \
     && ./configure \
         --prefix=/usr --sysconfdir=/etc --localstatedir=/var \
         --with-socketdir=/run/xrdp/sockdir \
         --enable-ipv6 --enable-jpeg --enable-fuse --enable-rfxcodec \
         --enable-opus --enable-painter --enable-vsock --enable-x264 \
+        --enable-rdpecam \
     && make -j"$(nproc)" && make install \
     && cd /tmp/xrdp-build \
     && curl -fsSL -o xorgxrdp.tar.gz https://github.com/neutrinolabs/xorgxrdp/archive/refs/tags/v0.10.3.tar.gz \
@@ -81,11 +102,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ./bootstrap && ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var \
     && make -j"$(nproc)" && make install \
     && ldd /usr/sbin/xrdp | grep -q libx264 \
-    && cd / && rm -rf /tmp/xrdp-build \
-    && apt-get purge -y build-essential autoconf automake libtool pkg-config nasm \
+    && ldd /usr/sbin/xrdp-chansrv | grep -q libpipewire \
+    && ldd /usr/sbin/xrdp-chansrv | grep -q libopenh264 \
+    && cd / && rm -rf /tmp/xrdp-build /tmp/xrdp-rdpecam \
+    && apt-get purge -y build-essential autoconf automake libtool pkg-config nasm patch \
         libx264-dev libfuse3-dev libjpeg-dev libopus-dev libpam0g-dev libssl-dev \
         libx11-dev libxfixes-dev libxrandr-dev \
         xserver-xorg-dev libgbm-dev libepoxy-dev libegl1-mesa-dev \
+        libpipewire-0.3-dev libopenh264-dev \
     && apt-get autoremove -y --purge \
     && rm -rf /var/lib/apt/lists/* \
     && if ldd /usr/sbin/xrdp /usr/sbin/xrdp-sesman /usr/sbin/xrdp-chansrv /usr/libexec/xrdp/xrdp-sesexec 2>/dev/null | grep -q "not found"; then echo "FATAL: xrdp binaries have missing shared libraries"; ldd /usr/sbin/xrdp-chansrv | grep "not found"; exit 1; fi
@@ -144,11 +168,21 @@ RUN sed -i 's/^autorun=.*/autorun=Xorg/' /etc/xrdp/xrdp.ini && \
     sed -i 's/^allow_multimon=false/allow_multimon=true/' /etc/xrdp/xrdp.ini && \
     sed -i 's/^security_layer=negotiate/security_layer=tls/' /etc/xrdp/xrdp.ini
 
-# 7. Configure PulseAudio daemon and XRDP sinks
+# 7. Configure PulseAudio daemon, XRDP audio sinks, and PipeWire/Firefox camera redirection
+#    PulseAudio handles RDP audio (module-xrdp-sink/source); WirePlumber's ALSA
+#    audio monitor is disabled so PipeWire only manages Video/Source camera nodes
+#    published by xrdp-chansrv ([MS-RDPECAM]). Firefox's PipeWire camera backend
+#    is enabled by default via system policy/pref.
 RUN sed -i 's/^; exit-idle-time = 20/exit-idle-time = -1/' /etc/pulse/daemon.conf && \
     sed -i 's/^; autospawn = yes/autospawn = yes/' /etc/pulse/client.conf && \
     echo "load-module module-xrdp-sink" >> /etc/pulse/default.pa && \
-    echo "load-module module-xrdp-source" >> /etc/pulse/default.pa
+    echo "load-module module-xrdp-source" >> /etc/pulse/default.pa && \
+    mkdir -p /etc/wireplumber/main.lua.d /etc/wireplumber/wireplumber.conf.d && \
+    printf 'alsa_monitor.enabled = false\n' > /etc/wireplumber/main.lua.d/90-xrdp-disable-alsa.lua && \
+    printf 'wireplumber.profiles = {\n  main = {\n    monitor.alsa = disabled\n  }\n}\n' > /etc/wireplumber/wireplumber.conf.d/90-xrdp-disable-alsa.conf && \
+    mkdir -p /etc/firefox/pref /usr/lib/firefox/distribution && \
+    printf 'pref("media.webrtc.camera.allow-pipewire", true);\n' > /etc/firefox/pref/xrdp-camera.js && \
+    printf '{\n  "policies": {\n    "Preferences": {\n      "media.webrtc.camera.allow-pipewire": {\n        "Value": true,\n        "Status": "default"\n      }\n    }\n  }\n}\n' > /usr/lib/firefox/distribution/policies.json
 
 # 8. Generate TLS Certificate
 RUN openssl req -x509 -newkey rsa:2048 -nodes \

@@ -10,18 +10,38 @@ if ! id -u "$USERNAME" >/dev/null 2>&1; then
     echo "$USERNAME:$PASSWORD" | chpasswd
     usermod -aG sudo "$USERNAME"
     usermod -aG video,render,audio "$USERNAME" 2>/dev/null || true
+fi
 
-    # User Xsession initialization: start PulseAudio and XFCE under DBus
-    cat << 'EOF' > "/home/$USERNAME/.xsession"
+# Ensure XDG_RUNTIME_DIR (/run/user/$UID) exists for PipeWire and XDG portals
+# (Docker does not run systemd-logind, so /run/user/$UID is not created automatically)
+USER_UID=$(id -u "$USERNAME")
+mkdir -p -m 0700 "/run/user/$USER_UID"
+chown "$USERNAME:$USERNAME" "/run/user/$USER_UID"
+
+# User Xsession initialization: start PulseAudio, PipeWire camera graph + XDG
+# portal, and XFCE under DBus. Written idempotently on every container start so
+# existing persistent /home volumes pick up PipeWire camera redirection.
+mkdir -p "/home/$USERNAME"
+cat << 'EOF' > "/home/$USERNAME/.xsession"
 #!/bin/bash
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+export XDG_CURRENT_DESKTOP="XFCE"
+mkdir -p -m 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
+
 pulseaudio --start --exit-idle-time=-1 2>/dev/null || true
 pacmd set-default-sink xrdp-sink 2>/dev/null || true
 pacmd set-default-source xrdp-source 2>/dev/null || true
-exec dbus-launch --exit-with-session startxfce4
+
+exec dbus-launch --exit-with-session bash -c '
+    /usr/bin/pipewire >/dev/null 2>&1 &
+    /usr/bin/wireplumber >/dev/null 2>&1 &
+    /usr/libexec/xdg-desktop-portal-gtk >/dev/null 2>&1 &
+    /usr/libexec/xdg-desktop-portal >/dev/null 2>&1 &
+    exec startxfce4
+'
 EOF
-    chmod +x "/home/$USERNAME/.xsession"
-    chown "$USERNAME:$USERNAME" "/home/$USERNAME/.xsession"
-fi
+chmod +x "/home/$USERNAME/.xsession"
+chown "$USERNAME:$USERNAME" "/home/$USERNAME/.xsession"
 
 # The home directory is typically a Docker named volume, which mounts
 # root-owned; useradd does not re-chown an existing mountpoint. The RDP

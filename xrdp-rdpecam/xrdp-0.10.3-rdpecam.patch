@@ -1,0 +1,303 @@
+diff --git a/configure.ac b/configure.ac
+index b5ec14f..a05bef6 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -176,6 +176,11 @@ AC_ARG_ENABLE(openh264, AS_HELP_STRING([--enable-openh264],
+               [Use Cisco OpenH264 library (default: no)]),
+               [], [enable_openh264=no])
+ AM_CONDITIONAL(XRDP_OPENH264, [test x$enable_openh264 = xyes])
++AC_ARG_ENABLE(rdpecam, AS_HELP_STRING([--enable-rdpecam],
++              [Build the PipeWire camera sink for camera redirection,
++               needs libpipewire and openh264 (default: no)]),
++              [], [enable_rdpecam=no])
++AM_CONDITIONAL(XRDP_RDPECAM_PIPEWIRE, [test x$enable_rdpecam = xyes])
+ AC_ARG_ENABLE(painter, AS_HELP_STRING([--disable-painter],
+               [Do not use included painter library (default: no)]),
+               [], [enable_painter=yes])
+@@ -484,6 +489,12 @@ AS_IF( [test "x$enable_x264" = "xyes"] , [PKG_CHECK_MODULES(XRDP_X264, x264 >= 0
+ 
+ AS_IF( [test "x$enable_openh264" = "xyes"] , [PKG_CHECK_MODULES(XRDP_OPENH264, openh264 >= 2.0.0)] )
+ 
++if test "x$enable_rdpecam" = "xyes"
++then
++  PKG_CHECK_MODULES([RDPECAM], [libpipewire-0.3 >= 0.3.40 openh264 >= 2.0.0], [],
++    [AC_MSG_ERROR([please install libpipewire-0.3-dev and libopenh264-dev])])
++fi
++
+ # checking for TurboJPEG
+ if test "x$enable_tjpeg" = "xyes"
+ then
+@@ -667,6 +678,7 @@ echo "  ipv6only                $enable_ipv6only"
+ echo "  vsock                   $enable_vsock"
+ echo "  auth mechanism          $auth_mech"
+ echo "  rdpsndaudin             $enable_rdpsndaudin"
++echo "  rdpecam (PipeWire)      $enable_rdpecam"
+ echo "  utmp support            $enable_utmp"
+ if test x$enable_utmp = xyes; then
+     echo "    utmpx.ut_host         $ac_cv_utmpx_has_ut_host"
+diff --git a/sesman/chansrv/Makefile.am b/sesman/chansrv/Makefile.am
+index fcf454d..be20479 100644
+--- a/sesman/chansrv/Makefile.am
++++ b/sesman/chansrv/Makefile.am
+@@ -39,6 +39,11 @@ if XRDP_RDPSNDAUDIN
+ AM_CPPFLAGS += -DXRDP_RDPSNDAUDIN
+ endif
+ 
++if XRDP_RDPECAM_PIPEWIRE
++AM_CPPFLAGS += -DXRDP_RDPECAM_PIPEWIRE $(RDPECAM_CFLAGS)
++CHANSRV_EXTRA_LIBS += $(RDPECAM_LIBS)
++endif
++
+ AM_CFLAGS = $(X_CFLAGS)
+ 
+ sbin_PROGRAMS = \
+@@ -75,7 +80,15 @@ xrdp_chansrv_SOURCES = \
+   xcommon.c \
+   xcommon.h \
+   audin.c \
+-  audin.h
++  audin.h \
++  rdpecam.c \
++  rdpecam.h
++
++if XRDP_RDPECAM_PIPEWIRE
++xrdp_chansrv_SOURCES += \
++  rdpecam_pipewire.c \
++  rdpecam_pipewire.h
++endif
+ 
+ xrdp_chansrv_LDFLAGS = \
+   $(X_LIBS)
+diff --git a/sesman/chansrv/audin.c b/sesman/chansrv/audin.c
+index d60e484..85a039b 100644
+--- a/sesman/chansrv/audin.c
++++ b/sesman/chansrv/audin.c
+@@ -411,6 +411,10 @@ audin_open_response(int chan_id, int creation_status)
+     {
+         return audin_send_version(chan_id);
+     }
++    LOG(LOG_LEVEL_INFO, "The client refused microphone redirection "
++        "(creation status 0x%8.8x)", creation_status);
++    g_audin_chanid = 0;
++    cleanup_client_formats();
+     return 0;
+ }
+ 
+@@ -536,6 +540,10 @@ int
+ audin_stop(void)
+ {
+     LOG_DEVEL(LOG_LEVEL_INFO, "audin_stop:");
++    if (g_audin_chanid == 0)
++    {
++        return 0;
++    }
+     chansrv_drdynvc_close(g_audin_chanid);
+     return 0;
+ }
+diff --git a/sesman/chansrv/chansrv.c b/sesman/chansrv/chansrv.c
+index bdd9f2f..69da64c 100644
+--- a/sesman/chansrv/chansrv.c
++++ b/sesman/chansrv/chansrv.c
+@@ -40,6 +40,10 @@
+ #include "chansrv_config.h"
+ #include "xrdp_sockets.h"
+ #include "audin.h"
++#include "rdpecam.h"
++#ifdef XRDP_RDPECAM_PIPEWIRE
++#include "rdpecam_pipewire.h"
++#endif
+ 
+ #include "scp.h"
+ #include "scp_sync.h"
+@@ -347,6 +351,7 @@ process_message_channel_setup(struct stream *s)
+     int num_chans;
+     int index;
+     int rv;
++    int have_drdynvc = 0;
+     struct chan_item *ci;
+ 
+     g_num_chan_items = 0;
+@@ -394,6 +399,11 @@ process_message_channel_setup(struct stream *s)
+             g_rail_index = g_num_chan_items;
+             g_rail_chan_id = ci->id;
+         }
++        else if (g_strcasecmp(ci->name, DRDYNVC_SVC_CHANNEL_NAME) == 0)
++        {
++            /* handled by xrdp, but tells us dynamic channels will work */
++            have_drdynvc = 1;
++        }
+         else
+         {
+             LOG_DEVEL(LOG_LEVEL_DEBUG, "other %s", ci->name);
+@@ -428,6 +438,23 @@ process_message_channel_setup(struct stream *s)
+ 
+     audin_init();
+ 
++    rdpecam_init();
++#ifdef XRDP_RDPECAM_PIPEWIRE
++    rdpecam_pipewire_init();
++#endif
++    if (g_cfg->enable_camera_redirection)
++    {
++        if (have_drdynvc)
++        {
++            rdpecam_start();
++        }
++        else
++        {
++            LOG(LOG_LEVEL_INFO, "Camera redirection needs dynamic virtual "
++                "channels, which the client does not support");
++        }
++    }
++
+     return rv;
+ }
+ 
+@@ -1379,6 +1406,36 @@ api_con_trans_list_remove_all(void)
+     return 0;
+ }
+ 
++/*****************************************************************************/
++static void
++drdynvc_reset_all(void)
++{
++    int api_con_index;
++    struct trans *ltran;
++    struct xrdp_api_data *ad;
++
++    for (api_con_index = g_api_con_trans_list->count - 1;
++            api_con_index >= 0;
++            api_con_index--)
++    {
++        ltran = (struct trans *)
++                list_get_item(g_api_con_trans_list, api_con_index);
++        if (ltran == NULL)
++        {
++            continue;
++        }
++        ad = (struct xrdp_api_data *) (ltran->callback_data);
++        if (ad != NULL && ad->chan_flags != 0)
++        {
++            list_remove_item(g_api_con_trans_list, api_con_index);
++            g_free(ad);
++            trans_delete(ltran);
++        }
++    }
++
++    g_memset(g_drdynvcs, 0, sizeof(g_drdynvcs));
++}
++
+ /*****************************************************************************/
+ THREAD_RV THREAD_CC
+ channel_thread_loop(void *in_val)
+@@ -1418,6 +1475,7 @@ channel_thread_loop(void *in_val)
+                 sound_deinit();
+                 devredir_deinit();
+                 rail_deinit();
++                rdpecam_deinit();
+                 break;
+             }
+ 
+@@ -1440,6 +1498,8 @@ channel_thread_loop(void *in_val)
+                     sound_deinit();
+                     devredir_deinit();
+                     rail_deinit();
++                    rdpecam_deinit();
++                    drdynvc_reset_all();
+                     /* delete g_con_trans */
+                     trans_delete(g_con_trans);
+                     g_con_trans = 0;
+@@ -1466,6 +1526,9 @@ channel_thread_loop(void *in_val)
+             sound_check_wait_objs();
+             devredir_check_wait_objs();
+             xfuse_check_wait_objs();
++#ifdef XRDP_RDPECAM_PIPEWIRE
++            rdpecam_pipewire_check_wait_objs();
++#endif
+             timeout = -1;
+             num_objs = 0;
+             num_wobjs = 0;
+@@ -1485,10 +1548,17 @@ channel_thread_loop(void *in_val)
+             sound_get_wait_objs(objs, &num_objs, &timeout);
+             devredir_get_wait_objs(objs, &num_objs, &timeout);
+             xfuse_get_wait_objs(objs, &num_objs, &timeout);
++#ifdef XRDP_RDPECAM_PIPEWIRE
++            rdpecam_pipewire_get_wait_objs(objs, &num_objs, &timeout);
++#endif
+             get_timeout(&timeout);
+         } /* end while (g_obj_wait(objs, num_objs, 0, 0, timeout) == 0) */
+     }
+ 
++#ifdef XRDP_RDPECAM_PIPEWIRE
++    rdpecam_pipewire_deinit();
++#endif
++
+     trans_delete(g_lis_trans);
+     g_lis_trans = 0;
+     trans_delete(g_con_trans);
+diff --git a/sesman/chansrv/chansrv_config.c b/sesman/chansrv/chansrv_config.c
+index 14bd43b..60185a9 100644
+--- a/sesman/chansrv/chansrv_config.c
++++ b/sesman/chansrv/chansrv_config.c
+@@ -47,6 +47,7 @@
+ #define DEFAULT_NUM_SILENT_FRAMES_AAC       4
+ #define DEFAULT_NUM_SILENT_FRAMES_MP3       2
+ #define DEFAULT_MSEC_DO_NOT_SEND            1000
++#define DEFAULT_ENABLE_CAMERA_REDIRECTION   1
+ #define DEFAULT_LOG_FILE_PATH               ""
+ /**
+  * Type used for passing a logging function about
+@@ -264,6 +265,10 @@ read_config_chansrv(log_func_t logmsg,
+         {
+             cfg->msec_do_not_send = strtoul(value, NULL, 0);
+         }
++        else if (g_strcasecmp(name, "EnableCameraRedirection") == 0)
++        {
++            cfg->enable_camera_redirection = g_text2bool(value);
++        }
+     }
+ 
+     return error;
+@@ -342,6 +347,7 @@ new_config(void)
+         cfg->num_silent_frames_aac = DEFAULT_NUM_SILENT_FRAMES_AAC;
+         cfg->num_silent_frames_mp3 = DEFAULT_NUM_SILENT_FRAMES_MP3;
+         cfg->msec_do_not_send = DEFAULT_MSEC_DO_NOT_SEND;
++        cfg->enable_camera_redirection = DEFAULT_ENABLE_CAMERA_REDIRECTION;
+         cfg->log_file_path = log_file_path;
+     }
+ 
+@@ -446,6 +452,8 @@ config_dump(struct config_chansrv *config)
+     g_writeln("    FileMask:                  0%o", config->file_umask);
+     g_writeln("    Nautilus 3 Flist Format:   %s",
+               g_bool2text(config->use_nautilus3_flist_format));
++    g_writeln("    EnableCameraRedirection:   %s",
++              g_bool2text(config->enable_camera_redirection));
+     g_writeln("    LogFilePath            :   %s",
+               (config->log_file_path[0]) ? config->log_file_path : "<default>");
+ }
+diff --git a/sesman/chansrv/chansrv_config.h b/sesman/chansrv/chansrv_config.h
+index 031bd48..197cac2 100644
+--- a/sesman/chansrv/chansrv_config.h
++++ b/sesman/chansrv/chansrv_config.h
+@@ -53,6 +53,9 @@ struct config_chansrv
+     /** Do net send sound data afer SNDC_CLOSE is sent. unit is millisecond, setting from sesman.ini */
+     unsigned int msec_do_not_send;
+ 
++    /** EnableCameraRedirection setting from sesman.ini */
++    int enable_camera_redirection;
++
+     /** LogFilePath from sesman.ini ([ChansrvLogging]) */
+     char *log_file_path;
+ };
+diff --git a/sesman/sesman.ini.in b/sesman/sesman.ini.in
+index 57a6545..30f154c 100644
+--- a/sesman/sesman.ini.in
++++ b/sesman/sesman.ini.in
+@@ -192,6 +192,7 @@ FileUmask=077
+ #SoundNumSilentFramesAAC=4
+ #SoundNumSilentFramesMP3=2
+ #SoundMsecDoNotSend=1000
++EnableCameraRedirection=true
+ 
+ [ChansrvLogging]
+ ; Note: one log file is created per display and the LogFile config value
