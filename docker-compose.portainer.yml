@@ -9,7 +9,8 @@ services:
       - "3389:3389"
     environment:
       - RDP_USER=engineer
-      - RDP_PASS=SuperSecurePass987!
+      # Change this! (Or set RDP_PASS in your Portainer environment.)
+      - RDP_PASS=ChangeMe123!
       - TZ=UTC
       # Set to 'iHD' for Intel, 'radeonsi' for AMD. Omit if using NVIDIA.
       - LIBVA_DRIVER_NAME=iHD
