@@ -171,6 +171,7 @@ RUN install -d -m 0755 /etc/apt/keyrings && \
         > /etc/apt/sources.list.d/vscode.list && \
     apt-get update && apt-get install -y --no-install-recommends firefox code && \
     sed -i 's|/usr/share/code/code |/usr/share/code/code --no-sandbox |g' /usr/share/applications/code.desktop /usr/share/applications/code-url-handler.desktop 2>/dev/null || true && \
+    sed -i 's|^Icon=.*|Icon=/usr/share/icons/Mkos-Big-Sur/128x128/apps/vscode.svg|' /usr/share/applications/code.desktop 2>/dev/null || true && \
     cp /usr/share/applications/code.desktop /usr/share/applications/vscode.desktop 2>/dev/null || true && \
     rm -rf /var/lib/apt/lists/*
 

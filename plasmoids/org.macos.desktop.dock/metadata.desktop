@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=macOS Animated Dock
+Comment=macOS-style animated dock with parabolic hover magnification and launch bounce
+Type=Service
+Icon=preferences-desktop-plasma
+X-KDE-ServiceTypes=Plasma/Applet
+X-Plasma-API=declarativeappletscript
+X-Plasma-MainScript=ui/main.qml
+X-KDE-PluginInfo-Author=linux-xrdp-desktop
+X-KDE-PluginInfo-Category=Windows and Tasks
+X-KDE-PluginInfo-License=MIT
+X-KDE-PluginInfo-Name=org.macos.desktop.dock
+X-KDE-PluginInfo-Version=1.0

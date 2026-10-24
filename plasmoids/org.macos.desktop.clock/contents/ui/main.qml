@@ -4,8 +4,8 @@ import org.kde.plasma.core 2.0 as PlasmaCore
 
 Item {
     id: root
-    width: 170
-    height: 170
+    width: 184
+    height: 184
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
     Plasmoid.preferredRepresentation: Plasmoid.fullRepresentation
 
@@ -23,15 +23,16 @@ Item {
 
     Rectangle {
         anchors.fill: parent
+        anchors.margins: 8
         radius: 26
-        color: "#E8E8ED"
-        border.color: "#30000000"
+        color: "#E5E5EA"
+        border.color: "#28000000"
         border.width: 1
 
         Rectangle {
             id: dial
             anchors.fill: parent
-            anchors.margins: 10
+            anchors.margins: 12
             radius: width / 2
             color: "#FFFFFF"
 

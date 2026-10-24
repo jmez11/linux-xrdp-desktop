@@ -5,8 +5,8 @@ import org.kde.plasma.core 2.0 as PlasmaCore
 
 Item {
     id: root
-    width: 170
-    height: 170
+    width: 184
+    height: 184
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
     Plasmoid.preferredRepresentation: Plasmoid.fullRepresentation
 
@@ -34,14 +34,15 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: 22
-        color: "#F2FFFFFF"
-        border.color: "#30000000"
+        anchors.margins: 8
+        radius: 24
+        color: "#F5FFFFFF"
+        border.color: "#28000000"
         border.width: 1
 
         ColumnLayout {
             anchors.fill: parent
-            anchors.margins: 14
+            anchors.margins: 16
             spacing: 4
 
             Text {
@@ -52,6 +53,8 @@ Item {
                 font.letterSpacing: 0.6
                 color: "#FF3B30"
                 Layout.alignment: Qt.AlignLeft
+                Layout.leftMargin: 3
+                Layout.topMargin: 1
             }
 
             GridLayout {

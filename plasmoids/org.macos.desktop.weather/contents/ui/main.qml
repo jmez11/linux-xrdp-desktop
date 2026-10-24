@@ -5,8 +5,8 @@ import org.kde.plasma.core 2.0 as PlasmaCore
 
 Item {
     id: root
-    width: 170
-    height: 170
+    width: 184
+    height: 184
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
     Plasmoid.preferredRepresentation: Plasmoid.fullRepresentation
 
@@ -120,17 +120,18 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: 22
+        anchors.margins: 8
+        radius: 24
         gradient: Gradient {
             GradientStop { position: 0.0; color: "#728EA8" }
             GradientStop { position: 1.0; color: "#90A4B8" }
         }
-        border.color: "#40FFFFFF"
+        border.color: "#38FFFFFF"
         border.width: 1
 
         ColumnLayout {
             anchors.fill: parent
-            anchors.margins: 16
+            anchors.margins: 18
             spacing: 2
 
             Text {

@@ -20,7 +20,7 @@
 #   7. Left-aligned traffic-light window controls (Summaculate Aurorae, XIA).
 set -u
 
-SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v3.done"
+SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v4.done"
 [ -f "$SENTINEL" ] && exit 0
 
 WALLPAPER="/usr/share/backgrounds/xrdp-wow.jpg"
@@ -238,55 +238,14 @@ clock.writeConfig("customDateFormat", "ddd MMM d");
 clock.writeConfig("use24hFormat", 0);
 
 // -------------------------------------------------------------------------
-// Bottom Panel -> Animated Dock
-// -------------------------------------------------------------------------
-var dock = new Panel("org.kde.panel");
-dock.location = "bottom";
-dock.height = 58;
-dock.alignment = "center";
-dock.hiding = "windowsgobelow";
-dock.floating = true;
-dock.opacity = "translucent";
-
-var screenW = screenGeometry(dock.screen).width;
-if (screenW > 0) {
-    dock.minimumLength = 240;
-    dock.maximumLength = screenW;
-}
-
-var tasks = dock.addWidget("org.kde.plasma.icontasks");
-tasks.currentConfigGroup = ["General"];
-tasks.writeConfig("launchers", [
-    "applications:org.kde.dolphin.desktop",
-    "applications:firefox.desktop",
-    "applications:vscode.desktop",
-    "applications:org.kde.konsole.desktop",
-    "applications:org.kde.kate.desktop",
-    "applications:org.kde.gwenview.desktop",
-    "applications:org.kde.okular.desktop",
-    "applications:gimp.desktop",
-    "applications:org.inkscape.Inkscape.desktop",
-    "applications:blender.desktop",
-    "applications:vlc.desktop",
-    "applications:libreoffice-writer.desktop",
-    "applications:libreoffice-calc.desktop",
-    "applications:org.kde.kcalc.desktop",
-    "applications:systemsettings.desktop"
-]);
-tasks.writeConfig("showOnlyCurrentScreen", false);
-tasks.writeConfig("maxStripes", 1);
-tasks.writeConfig("iconSpacing", 1);
-tasks.writeConfig("launchersEverSet", true);
-
-var disks = dock.addWidget("org.kde.plasma.devicenotifier");
-var trash = dock.addWidget("org.kde.plasma.trash");
-
-// -------------------------------------------------------------------------
 // Desktop Containments:
 //   - Automatic icon layout to Top-Right (arrangement = 1 [Columns],
 //     alignment = 1 [Right], sortMode = 1 [Name]) so "System Drive" sits at
 //     top-right
 //   - Top-Left Desktop Widgets: Calendar, Weather (IP-geolocated), Analog Clock
+//     with macOS widget padding matching the reference screenshot
+//   - Bottom-Center Animated macOS Dock (org.macos.desktop.dock) with unclipped
+//     parabolic magnification and multi-bounce launch animation
 // -------------------------------------------------------------------------
 var allDesktops = desktops();
 for (var d = 0; d < allDesktops.length; d++) {
@@ -311,15 +270,28 @@ for (var d = 0; d < allDesktops.length; d++) {
         var calW = desk.addWidget("org.macos.desktop.calendar");
         var weaW = desk.addWidget("org.macos.desktop.weather");
         var clkW = desk.addWidget("org.macos.desktop.clock");
+        var dockW = desk.addWidget("org.macos.desktop.dock");
 
-        var geomStr = "Applet-" + calW.id + ":24,44,176,176,0;" +
-                      "Applet-" + weaW.id + ":216,44,176,176,0;" +
-                      "Applet-" + clkW.id + ":24,236,176,176,0;";
-        desk.writeConfig("ItemGeometriesHorizontal", geomStr);
-        desk.writeConfig("ItemGeometries-1920x1080", geomStr);
-        desk.writeConfig("ItemGeometries-2560x1440", geomStr);
-        desk.writeConfig("ItemGeometries-1600x900", geomStr);
-        desk.writeConfig("ItemGeometries-1366x768", geomStr);
+        function makeGeom(scrW, scrH) {
+            var dockWidth = Math.min(1120, scrW - 32);
+            var dockX = Math.max(16, Math.round((scrW - dockWidth) / 2));
+            var dockY = Math.max(420, scrH - 122);
+            return "Applet-" + calW.id + ":16,38,184,184,0;" +
+                   "Applet-" + weaW.id + ":204,38,184,184,0;" +
+                   "Applet-" + clkW.id + ":16,226,184,184,0;" +
+                   "Applet-" + dockW.id + ":" + dockX + "," + dockY + "," + dockWidth + ",116,0;";
+        }
+
+        var curG = screenGeometry(desk.screen);
+        var curW = (curG && curG.width > 0) ? curG.width : 1920;
+        var curH = (curG && curG.height > 0) ? curG.height : 1080;
+
+        desk.writeConfig("ItemGeometriesHorizontal", makeGeom(curW, curH));
+        desk.writeConfig("ItemGeometries-" + curW + "x" + curH, makeGeom(curW, curH));
+        desk.writeConfig("ItemGeometries-1920x1080", makeGeom(1920, 1080));
+        desk.writeConfig("ItemGeometries-2560x1440", makeGeom(2560, 1440));
+        desk.writeConfig("ItemGeometries-1600x900", makeGeom(1600, 900));
+        desk.writeConfig("ItemGeometries-1366x768", makeGeom(1366, 768));
     }
 }
 EOF
