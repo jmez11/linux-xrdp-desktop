@@ -54,7 +54,7 @@ Item {
         ListElement { name: "LibreOffice Calc"; appMatch: "calc"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/libreoffice-calc.svg"; cmd: "libreoffice --calc"; isSeparatorBefore: false }
         ListElement { name: "Calculator"; appMatch: "kcalc"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/accessories-calculator.svg"; cmd: "kcalc"; isSeparatorBefore: false }
         ListElement { name: "System Settings"; appMatch: "systemsettings"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/systemsettings.svg"; cmd: "systemsettings5"; isSeparatorBefore: false }
-        ListElement { name: "Shared Drives"; appMatch: "thinclient_drives"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/places/folder-blue.svg"; cmd: "dolphin ~/thinclient_drives"; isSeparatorBefore: true }
+        ListElement { name: "Shared Drives"; appMatch: "thinclient_drives"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/devices/drive-harddisk.svg"; cmd: "dolphin ~/thinclient_drives"; isSeparatorBefore: true }
         ListElement { name: "Trash"; appMatch: "trash"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/places/user-trash-full.svg"; cmd: "dolphin trash:/"; isSeparatorBefore: false }
     }
 
@@ -75,19 +75,28 @@ Item {
 
     // Keep the dock widget dynamically centered at the bottom middle of the desktop
     function centerOnDesktop() {
-        if (root.parent && root.parent.parent && root.parent.parent.width > 200 && root.parent.parent.height > 200) {
-            var deskItem = root.parent.parent;
-            var targetX = Math.round((deskItem.width - root.parent.width) / 2);
-            var targetY = Math.round(deskItem.height - root.parent.height - 4);
-            if (Math.abs(root.parent.x - targetX) > 2) root.parent.x = targetX;
-            if (Math.abs(root.parent.y - targetY) > 2) root.parent.y = targetY;
+        var container = root;
+        while (container && container.parent && (container.parent.width < 500 || container.parent.height < 350)) {
+            container = container.parent;
+        }
+        if (container && container.parent && container.parent.width >= 500 && container.parent.height >= 350) {
+            var layout = container.parent;
+            var targetW = Math.min(1040, layout.width - 24);
+            var targetH = 116;
+            var targetX = Math.round((layout.width - targetW) / 2);
+            var targetY = Math.round(layout.height - targetH - 2);
+
+            if (Math.abs(container.width - targetW) > 2) container.width = targetW;
+            if (Math.abs(container.height - targetH) > 2) container.height = targetH;
+            if (Math.abs(container.x - targetX) > 2) container.x = targetX;
+            if (Math.abs(container.y - targetY) > 2) container.y = targetY;
         }
     }
 
     Component.onCompleted: centerOnDesktop()
 
     Timer {
-        interval: 600
+        interval: 500
         running: true
         repeat: true
         onTriggered: root.centerOnDesktop()

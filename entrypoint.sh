@@ -25,6 +25,40 @@ USER_UID=$(id -u "$USERNAME")
 mkdir -p -m 0700 "/run/user/$USER_UID"
 chown "$USERNAME:$USERNAME" "/run/user/$USER_UID"
 
+mkdir -p "/home/$USERNAME/Desktop" "/home/$USERNAME/Downloads" "/home/$USERNAME/Documents" "/home/$USERNAME/.config"
+
+# Guarantee XDG user dirs explicitly point Desktop to ~/Desktop from the very first session start
+cat << 'EOF' > "/home/$USERNAME/.config/user-dirs.dirs"
+XDG_DESKTOP_DIR="$HOME/Desktop"
+XDG_DOWNLOAD_DIR="$HOME/Downloads"
+XDG_TEMPLATES_DIR="$HOME/Templates"
+XDG_PUBLICSHARE_DIR="$HOME/Public"
+XDG_DOCUMENTS_DIR="$HOME/Documents"
+XDG_MUSIC_DIR="$HOME/Music"
+XDG_PICTURES_DIR="$HOME/Pictures"
+XDG_VIDEOS_DIR="$HOME/Videos"
+EOF
+
+cat << 'EOF' > "/home/$USERNAME/Desktop/System Drive.desktop"
+[Desktop Entry]
+Type=Link
+Name=System Drive
+Icon=/usr/share/icons/Mkos-Big-Sur/128x128/devices/disk.svg
+URL=file:///
+EOF
+chmod +x "/home/$USERNAME/Desktop/System Drive.desktop"
+
+# Pre-configure VS Code arguments to disable hardware acceleration on software displays
+mkdir -p "/home/$USERNAME/.vscode" "/home/$USERNAME/.config/Code"
+cat << 'EOF' > "/home/$USERNAME/.vscode/argv.json"
+{
+    "enable-crash-reporter": false,
+    "disable-hardware-acceleration": true,
+    "password-store": "basic"
+}
+EOF
+cp "/home/$USERNAME/.vscode/argv.json" "/home/$USERNAME/.config/Code/argv.json" 2>/dev/null || true
+
 # User Xsession initialization: start PulseAudio, PipeWire camera graph + XDG
 # portal, and KDE Plasma (X11) under DBus. Written idempotently on every container
 # start so existing persistent /home volumes pick up KDE Plasma + PipeWire camera redirection.
@@ -154,6 +188,9 @@ done
 for bin in /usr/libexec/accounts-daemon /usr/lib/accountsservice/accounts-daemon; do
     if [ -x "$bin" ]; then "$bin" >/dev/null 2>&1 & break; fi
 done
+sleep 0.5
+dbus-send --system --print-reply --dest=org.freedesktop.Accounts /org/freedesktop/Accounts org.freedesktop.Accounts.CacheUser string:"$USERNAME" >/dev/null 2>&1 || true
+dbus-send --system --print-reply --dest=org.freedesktop.Accounts /org/freedesktop/Accounts org.freedesktop.Accounts.FindUserByName string:"$USERNAME" >/dev/null 2>&1 || true
 
 /usr/sbin/xrdp-sesman
 exec /usr/sbin/xrdp --nodaemon

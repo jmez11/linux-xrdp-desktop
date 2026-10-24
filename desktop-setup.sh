@@ -20,11 +20,23 @@
 #   7. Left-aligned traffic-light window controls (Summaculate Aurorae, XIA).
 set -u
 
-SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v5.done"
+SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v6.done"
 [ -f "$SENTINEL" ] && exit 0
 
 WALLPAPER="/usr/share/backgrounds/xrdp-wow.jpg"
-mkdir -p "$HOME/.config" "$HOME/.local/share/konsole" "$HOME/.local/share/applications" "$HOME/Desktop"
+mkdir -p "$HOME/.config" "$HOME/.local/share/konsole" "$HOME/.local/share/applications" "$HOME/Desktop" "$HOME/Downloads" "$HOME/Documents"
+
+# Ensure XDG user dirs explicitly point Desktop to ~/Desktop (avoiding desktop:/ falling back to $HOME)
+cat << 'EOF' > "$HOME/.config/user-dirs.dirs"
+XDG_DESKTOP_DIR="$HOME/Desktop"
+XDG_DOWNLOAD_DIR="$HOME/Downloads"
+XDG_TEMPLATES_DIR="$HOME/Templates"
+XDG_PUBLICSHARE_DIR="$HOME/Public"
+XDG_DOCUMENTS_DIR="$HOME/Documents"
+XDG_MUSIC_DIR="$HOME/Music"
+XDG_PICTURES_DIR="$HOME/Pictures"
+XDG_VIDEOS_DIR="$HOME/Videos"
+EOF
 
 # ---------------------------------------------------------------------------
 # 1. Smooth Font Rendering (Qt/KDE, Fontconfig, Xft, GTK)
@@ -123,7 +135,7 @@ cat << 'EOF' > "$HOME/Desktop/System Drive.desktop"
 [Desktop Entry]
 Type=Link
 Name=System Drive
-Icon=drive-harddisk-system
+Icon=/usr/share/icons/Mkos-Big-Sur/128x128/devices/disk.svg
 URL=file:///
 EOF
 chmod +x "$HOME/Desktop/System Drive.desktop"
@@ -261,6 +273,7 @@ for (var d = 0; d < allDesktops.length; d++) {
     desk.writeConfig("iconSize", 3);    // 64px desktop drive icon
     desk.writeConfig("labelMode", 0);
     desk.writeConfig("toolTips", true);
+    desk.writeConfig("url", "desktop:/");
 
     if (d === 0) {
         var oldWidgets = desk.widgets();

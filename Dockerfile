@@ -174,12 +174,7 @@ RUN install -d -m 0755 /etc/apt/keyrings && \
     echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main" \
         > /etc/apt/sources.list.d/vscode.list \
     && apt-get update && apt-get install -y --no-install-recommends firefox code \
-    && printf '#!/bin/sh\nmkdir -p "${XDG_RUNTIME_DIR:-/tmp}"\nexec /usr/share/code/code --no-sandbox --disable-gpu-sandbox --disable-dev-shm-usage --password-store=basic "$@"\n' > /usr/local/bin/vscode-launch \
-    && chmod +x /usr/local/bin/vscode-launch \
-    && sed -i 's|/usr/share/code/code |/usr/local/bin/vscode-launch |g' /usr/share/applications/code.desktop /usr/share/applications/code-url-handler.desktop 2>/dev/null || true \
-    && sed -i 's|^Icon=.*|Icon=/usr/share/icons/Mkos-Big-Sur/128x128/apps/vscode.svg|' /usr/share/applications/code.desktop 2>/dev/null || true \
-    && cp /usr/share/applications/code.desktop /usr/share/applications/vscode.desktop 2>/dev/null || true \
-    && ln -sf /usr/local/bin/vscode-launch /usr/local/bin/code \
+    && if [ -f /usr/share/code/code ] && [ ! -f /usr/share/code/code.real ]; then mv /usr/share/code/code /usr/share/code/code.real; fi \
     && rm -rf /var/lib/apt/lists/*
 
 # 3. Build pulseaudio-module-xrdp from source (neutrinolabs, v0.8).
@@ -272,13 +267,19 @@ RUN mkdir -p /usr/share/icons /usr/share/aurorae/themes /usr/share/plasma/plasmo
     && mkdir -p /etc/polkit-1/rules.d /var/lib/polkit-1/localauthority/50-local.d \
     && printf 'polkit.addRule(function(action, subject) {\n    if (subject.isInGroup("sudo")) {\n        return polkit.Result.YES;\n    }\n});\n' > /etc/polkit-1/rules.d/49-nopasswd-sudo.rules \
     && printf '[Allow all polkit actions for sudo group]\nIdentity=unix-group:sudo\nAction=*\nResultAny=yes\nResultInactive=yes\nResultActive=yes\n' > /var/lib/polkit-1/localauthority/50-local.d/49-nopasswd-sudo.pkla \
-    && python3 -c 'p="/usr/share/kpackage/kcms/kcm_users/contents/ui/PicturesSheet.qml"; import os; s=open(p).read() if os.path.exists(p) else ""; s=s.replace("contentItem: QQC2.SwipeView {\n        id: stackSwitcher", "contentItem: Item {\n        id: stackSwitcher\n        property int currentIndex: 0\n        clip: true\n        implicitHeight: currentIndex === 0 ? cols.implicitHeight : (currentIndex === 1 ? initialPictures.implicitHeight : iconPictures.implicitHeight)\n        Layout.fillWidth: true").replace("setCurrentIndex(-1)\n            setCurrentIndex(index)", "currentIndex = index").replace("ColumnLayout {\n            id: cols", "ColumnLayout {\n            id: cols\n            width: stackSwitcher.width\n            visible: stackSwitcher.currentIndex === 0").replace("ColumnLayout {\n            id: initialPictures", "ColumnLayout {\n            id: initialPictures\n            width: stackSwitcher.width\n            visible: stackSwitcher.currentIndex === 1").replace("ColumnLayout {\n            id: iconPictures", "ColumnLayout {\n            id: iconPictures\n            width: stackSwitcher.width\n            visible: stackSwitcher.currentIndex === 2").replace("initialPictures.QQC2.SwipeView.index", "1").replace("iconPictures.QQC2.SwipeView.index", "2").replace("cols.QQC2.SwipeView.index", "0").replace("kcm.initializeString(user.displayPrimaryName)", "(user ? kcm.initializeString(user.displayPrimaryName) : \"U\")"); open(p,"w").write(s) if s else None' \
-    && python3 -c 'p="/usr/share/kpackage/kcms/kcm_users/contents/ui/UserDetailsPage.qml"; import os; s=open(p).read() if os.path.exists(p) else ""; s=s.replace("name: user.realName", "name: user ? user.realName : \"\"\n            MouseArea {\n                anchors.fill: parent\n                cursorShape: Qt.PointingHandCursor\n                onClicked: {\n                    const component = Qt.createComponent(\"PicturesSheet.qml\");\n                    component.incubateObject(usersDetailPage, { \"parent\": usersDetailPage });\n                    component.destroy();\n                }\n            }\n            QQC2.Button {\n                anchors.right: parent.right\n                anchors.bottom: parent.bottom\n                width: 30; height: 30\n                icon.name: \"edit-entry\"\n                onClicked: {\n                    const component = Qt.createComponent(\"PicturesSheet.qml\");\n                    component.incubateObject(usersDetailPage, { \"parent\": usersDetailPage });\n                    component.destroy();\n                }\n            }"); open(p,"w").write(s) if s else None'
-
 COPY plasmoids/ /usr/share/plasma/plasmoids/
 COPY xrdp-drives-sync.py /usr/local/bin/xrdp-drives-sync.py
 COPY xrdp-deb-installer.sh /usr/local/bin/xrdp-deb-installer.sh
-RUN chmod +x /usr/local/bin/xrdp-drives-sync.py /usr/local/bin/xrdp-deb-installer.sh
+COPY vscode-launch /usr/local/bin/vscode-launch
+COPY PicturesSheet.qml /usr/share/kpackage/kcms/kcm_users/contents/ui/PicturesSheet.qml
+COPY UserDetailsPage.qml /usr/share/kpackage/kcms/kcm_users/contents/ui/UserDetailsPage.qml
+RUN chmod +x /usr/local/bin/xrdp-drives-sync.py /usr/local/bin/xrdp-deb-installer.sh /usr/local/bin/vscode-launch \
+    && ln -sf /usr/local/bin/vscode-launch /usr/local/bin/code \
+    && ln -sf /usr/local/bin/vscode-launch /usr/share/code/code \
+    && ln -sf /usr/local/bin/vscode-launch /usr/bin/code \
+    && sed -i 's|^Icon=.*|Icon=/usr/share/icons/Mkos-Big-Sur/128x128/apps/vscode.svg|' /usr/share/applications/code.desktop 2>/dev/null || true \
+    && cp /usr/share/applications/code.desktop /usr/share/applications/vscode.desktop 2>/dev/null || true \
+    && update-desktop-database /usr/share/applications 2>/dev/null || true
 
 COPY assets/wow-wallpaper.jpg /usr/share/backgrounds/xrdp-wow.jpg
 COPY desktop-setup.sh /usr/local/bin/desktop-setup.sh

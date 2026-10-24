@@ -1,0 +1,36 @@
+#!/bin/sh
+# Wrapper to launch VS Code reliably inside Docker / XRDP containers without segfaulting.
+# Ensures XDG runtime dir, software rendering fallbacks, and Chromium flags.
+set -e
+
+mkdir -p "${XDG_RUNTIME_DIR:-/tmp}" "$HOME/.vscode" "$HOME/.config/Code"
+
+if [ ! -f "$HOME/.vscode/argv.json" ]; then
+    cat << 'EOF' > "$HOME/.vscode/argv.json"
+{
+    "enable-crash-reporter": false,
+    "disable-hardware-acceleration": true,
+    "password-store": "basic"
+}
+EOF
+fi
+
+if [ ! -f "$HOME/.config/Code/argv.json" ]; then
+    cp "$HOME/.vscode/argv.json" "$HOME/.config/Code/argv.json" 2>/dev/null || true
+fi
+
+# Clear hardware GPU / video acceleration variables that cause Mesa/GLX to segfault under xorgxrdp
+unset LIBVA_DRIVER_NAME VGL_DISPLAY VGL_COMPRESS VGL_FPS
+export ELECTRON_OZONE_PLATFORM_HINT=x11
+export LIBGL_ALWAYS_SOFTWARE=1
+export XLIB_SKIP_ARGB_VISUALS=1
+
+# Run the real VS Code Electron binary with safety flags
+exec /usr/share/code/code.real \
+    --no-sandbox \
+    --disable-gpu \
+    --disable-gpu-sandbox \
+    --disable-dev-shm-usage \
+    --ozone-platform=x11 \
+    --password-store=basic \
+    "$@"
