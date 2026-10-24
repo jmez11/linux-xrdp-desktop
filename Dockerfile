@@ -38,6 +38,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     okular \
     kde-spectacle \
     kcalc \
+    kdialog \
+    libnotify-bin \
+    desktop-file-utils \
     appmenu-gtk3-module \
     appmenu-gtk2-module \
     libdbusmenu-glib4 \
@@ -168,6 +171,7 @@ RUN install -d -m 0755 /etc/apt/keyrings && \
         > /etc/apt/sources.list.d/vscode.list && \
     apt-get update && apt-get install -y --no-install-recommends firefox code && \
     sed -i 's|/usr/share/code/code |/usr/share/code/code --no-sandbox |g' /usr/share/applications/code.desktop /usr/share/applications/code-url-handler.desktop 2>/dev/null || true && \
+    cp /usr/share/applications/code.desktop /usr/share/applications/vscode.desktop 2>/dev/null || true && \
     rm -rf /var/lib/apt/lists/*
 
 # 3. Build pulseaudio-module-xrdp from source (neutrinolabs, v0.8).
@@ -240,6 +244,7 @@ RUN openssl req -x509 -newkey rsa:2048 -nodes \
 RUN mkdir -p /usr/share/icons /usr/share/aurorae/themes /usr/share/plasma/plasmoids \
     && git clone --depth 1 https://github.com/zayronxio/Mkos-Big-Sur.git /usr/share/icons/Mkos-Big-Sur \
     && rm -rf /usr/share/icons/Mkos-Big-Sur/.git /usr/share/icons/Mkos-Big-Sur/preview-icons-apps \
+    && rm -f /usr/share/icons/Mkos-Big-Sur/*/apps/*dolphin*.svg /usr/share/icons/Mkos-Big-Sur/*/apps/*file-manager*.svg /usr/share/icons/Mkos-Big-Sur/*/apps/Filemanager.svg \
     && gtk-update-icon-cache -f /usr/share/icons/Mkos-Big-Sur 2>/dev/null || true \
     && git clone --depth 1 https://github.com/doncsugar/sumac-theme.git /tmp/sumac-theme \
     && cp -r /tmp/sumac-theme/aurorae/summaculate/* /usr/share/aurorae/themes/ \
@@ -250,13 +255,17 @@ RUN mkdir -p /usr/share/icons /usr/share/aurorae/themes /usr/share/plasma/plasmo
     && git clone --depth 1 https://github.com/EliverLara/kde-control-station.git /tmp/kde-control-station \
     && cp -r /tmp/kde-control-station/package /usr/share/plasma/plasmoids/com.github.prayag2.controlcentre \
     && rm -rf /tmp/kde-control-station \
+    && python3 -c 'p="/usr/share/plasma/plasmoids/org.kde.plasma.taskmanager/contents/ui/Task.qml"; s=open(p).read(); anim="\n            scale: task.highlighted ? 1.24 : 1.0\n            transformOrigin: Item.Bottom\n            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }\n"; s=s.replace("usesPlasmaTheme: false", "usesPlasmaTheme: false" + anim, 1) if "Behavior on scale" not in s else s; open(p,"w").write(s)' \
     && mkdir -p /etc/fonts \
     && printf '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n<fontconfig>\n  <match target="font">\n    <edit name="antialias" mode="assign"><bool>true</bool></edit>\n    <edit name="hinting" mode="assign"><bool>true</bool></edit>\n    <edit name="hintstyle" mode="assign"><const>hintslight</const></edit>\n    <edit name="rgba" mode="assign"><const>rgb</const></edit>\n    <edit name="lcdfilter" mode="assign"><const>lcddefault</const></edit>\n    <edit name="embeddedbitmap" mode="assign"><bool>false</bool></edit>\n  </match>\n</fontconfig>\n' > /etc/fonts/local.conf \
-    && fc-cache -fv >/dev/null 2>&1 || true
+    && fc-cache -fv >/dev/null 2>&1 || true \
+    && printf '[Desktop Entry]\nType=Application\nName=Automatic Package Installer\nComment=Automatically install .deb packages and update sources\nExec=/usr/local/bin/xrdp-deb-installer.sh %%F\nIcon=system-software-install\nTerminal=false\nNoDisplay=true\nMimeType=application/vnd.debian.binary-package;application/x-deb;application/x-debian-package;\n' > /usr/share/applications/xrdp-deb-installer.desktop \
+    && update-desktop-database /usr/share/applications 2>/dev/null || true
 
 COPY plasmoids/ /usr/share/plasma/plasmoids/
 COPY xrdp-drives-sync.py /usr/local/bin/xrdp-drives-sync.py
-RUN chmod +x /usr/local/bin/xrdp-drives-sync.py
+COPY xrdp-deb-installer.sh /usr/local/bin/xrdp-deb-installer.sh
+RUN chmod +x /usr/local/bin/xrdp-drives-sync.py /usr/local/bin/xrdp-deb-installer.sh
 
 COPY assets/wow-wallpaper.jpg /usr/share/backgrounds/xrdp-wow.jpg
 COPY desktop-setup.sh /usr/local/bin/desktop-setup.sh

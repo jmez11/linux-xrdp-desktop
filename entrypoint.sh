@@ -12,6 +12,10 @@ if ! id -u "$USERNAME" >/dev/null 2>&1; then
     usermod -aG video,render,audio "$USERNAME" 2>/dev/null || true
 fi
 
+# Grant passwordless sudo for package management & administrative tasks inside the container
+printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$USERNAME" > "/etc/sudoers.d/90-$USERNAME"
+chmod 0440 "/etc/sudoers.d/90-$USERNAME"
+
 # Ensure XDG_RUNTIME_DIR (/run/user/$UID) exists for PipeWire and XDG portals
 # (Docker does not run systemd-logind, so /run/user/$UID is not created automatically)
 USER_UID=$(id -u "$USERNAME")

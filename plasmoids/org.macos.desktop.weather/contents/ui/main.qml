@@ -10,11 +10,14 @@ Item {
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
     Plasmoid.preferredRepresentation: Plasmoid.fullRepresentation
 
-    property string cityName: "New York"
-    property string temperature: "79°"
-    property string conditionText: "Cloudy"
-    property string highLowText: "H:81°  L:66°"
-    property string weatherGlyph: "☁"
+    property string cityName: "Locating..."
+    property string temperature: "--°"
+    property string conditionText: "Loading"
+    property string highLowText: "H:--°  L:--°"
+    property string weatherGlyph: "⛅"
+    property real latitude: 37.7749
+    property real longitude: -122.4194
+    property bool hasGeo: false
 
     function mapWeatherCode(code) {
         if (code === 0) return { text: "Clear", glyph: "☀" };
@@ -28,9 +31,11 @@ Item {
         return { text: "Cloudy", glyph: "☁" };
     }
 
-    function fetchWeather() {
+    function fetchWeatherForCoords(lat, lon) {
         var xhr = new XMLHttpRequest();
-        var url = "https://api.open-meteo.com/v1/forecast?latitude=40.7128&longitude=-74.0060&current_weather=true&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto";
+        var url = "https://api.open-meteo.com/v1/forecast?latitude=" + encodeURIComponent(lat) +
+                  "&longitude=" + encodeURIComponent(lon) +
+                  "&current_weather=true&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto";
         xhr.open("GET", url, true);
         xhr.onreadystatechange = function() {
             if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
@@ -53,13 +58,64 @@ Item {
         xhr.send();
     }
 
-    Component.onCompleted: fetchWeather()
+    function geolocateAndFetch() {
+        var geoXhr = new XMLHttpRequest();
+        geoXhr.open("GET", "https://get.geojs.io/v1/ip/geo.json", true);
+        geoXhr.onreadystatechange = function() {
+            if (geoXhr.readyState === XMLHttpRequest.DONE) {
+                if (geoXhr.status === 200) {
+                    try {
+                        var geo = JSON.parse(geoXhr.responseText);
+                        if (geo.city) root.cityName = geo.city;
+                        if (geo.latitude && geo.longitude) {
+                            root.latitude = parseFloat(geo.latitude);
+                            root.longitude = parseFloat(geo.longitude);
+                            root.hasGeo = true;
+                        }
+                    } catch (e) {}
+                }
+                if (root.hasGeo) {
+                    root.fetchWeatherForCoords(root.latitude, root.longitude);
+                } else {
+                    root.geolocateFallback();
+                }
+            }
+        };
+        geoXhr.send();
+    }
+
+    function geolocateFallback() {
+        var fbXhr = new XMLHttpRequest();
+        fbXhr.open("GET", "https://ipwho.is/", true);
+        fbXhr.onreadystatechange = function() {
+            if (fbXhr.readyState === XMLHttpRequest.DONE) {
+                if (fbXhr.status === 200) {
+                    try {
+                        var geo = JSON.parse(fbXhr.responseText);
+                        if (geo.city) root.cityName = geo.city;
+                        if (geo.latitude && geo.longitude) {
+                            root.latitude = parseFloat(geo.latitude);
+                            root.longitude = parseFloat(geo.longitude);
+                            root.hasGeo = true;
+                        }
+                    } catch (e) {}
+                }
+                if (!root.cityName || root.cityName === "Locating...") {
+                    root.cityName = "Local";
+                }
+                root.fetchWeatherForCoords(root.latitude, root.longitude);
+            }
+        };
+        fbXhr.send();
+    }
+
+    Component.onCompleted: geolocateAndFetch()
 
     Timer {
         interval: 1800000
         running: true
         repeat: true
-        onTriggered: root.fetchWeather()
+        onTriggered: root.geolocateAndFetch()
     }
 
     Rectangle {
@@ -83,6 +139,8 @@ Item {
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
                 color: "#FFFFFF"
+                elide: Text.ElideRight
+                Layout.fillWidth: true
             }
 
             Text {

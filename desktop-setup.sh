@@ -3,22 +3,24 @@
 # Configures:
 #   1. Smooth subpixel font rendering (Inter + Fira Code, RGB anti-aliasing,
 #      slight hinting, 96 DPI) across Qt/KDE, GTK, and X11.
-#   2. Top macOS Menu Bar (User Switcher, Window Title, Global Menu, Spacer,
+#   2. Top Menu Bar (User Switcher, Window Title, Global Menu, Spacer,
 #      System Tray, Control Centre, Digital Clock).
-#   3. Bottom colorful macOS Dock with Mkos-Big-Sur icons and working launchers
-#      for preinstalled apps (Finder/Dolphin, Firefox, VS Code with --no-sandbox,
-#      Konsole, Kate, Gwenview, Okular, GIMP, Inkscape, Blender, VLC,
-#      LibreOffice Calc/Writer, Calculator, System Settings) + Disks & Devices + Trash.
-#   4. Desktop top-left macOS Sonoma/Sequoia widgets:
+#   3. Bottom animated Dock (hover zoom/bounce via Task.qml) with native Dolphin
+#      icon, Mkos-Big-Sur icons for other apps, and working launchers for
+#      preinstalled apps (Dolphin, Firefox, VS Code, Konsole, Kate, Gwenview,
+#      Okular, GIMP, Inkscape, Blender, VLC, LibreOffice Calc/Writer,
+#      Calculator, System Settings) + Disks & Devices + Trash.
+#   4. Desktop top-left rounded widgets:
 #      - Calendar widget (top-left)
-#      - Weather widget (next to Calendar)
+#      - Weather widget (next to Calendar, IP-geolocated)
 #      - Analog Clock widget (below Calendar)
 #   5. Desktop top-right automatic icon layout (Columns + Right alignment) with
-#      "Macintosh HD" hard drive icon at top-right.
-#   6. Left-aligned traffic-light window controls (Summaculate Aurorae, XIA).
+#      "System Drive" hard drive icon at top-right.
+#   6. Automatic one-click .deb package installation via xrdp-deb-installer.desktop.
+#   7. Left-aligned traffic-light window controls (Summaculate Aurorae, XIA).
 set -u
 
-SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v2.done"
+SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v3.done"
 [ -f "$SENTINEL" ] && exit 0
 
 WALLPAPER="/usr/share/backgrounds/xrdp-wow.jpg"
@@ -65,7 +67,7 @@ kwriteconfig5 --file kdeglobals --group WM --key activeFont "Inter,10,-1,5,75,0,
 kwriteconfig5 --file kcmfonts --group General --key forceFontDPI "96"
 
 # ---------------------------------------------------------------------------
-# 2. Theme, Mkos-Big-Sur Icons, Dark Color Scheme, and GTK Sync
+# 2. Theme, Mkos-Big-Sur Icons (preserving native Dolphin icon), and GTK Sync
 # ---------------------------------------------------------------------------
 kwriteconfig5 --file kdeglobals --group General --key ColorScheme "BreezeDark"
 kwriteconfig5 --file kdeglobals --group KDE --key LookAndFeelPackage "org.kde.breezedark.desktop"
@@ -92,35 +94,47 @@ gtk-xft-hintstyle=hintslight
 gtk-xft-rgba=rgb
 EOF
 
-# ---------------------------------------------------------------------------
-# 3. Fix VS Code Launcher (code.desktop) & Create "Macintosh HD" Desktop Icon
-# ---------------------------------------------------------------------------
-if [ -f /usr/share/applications/code.desktop ]; then
-    sed 's|/usr/share/code/code |/usr/share/code/code --no-sandbox |g' \
-        /usr/share/applications/code.desktop > "$HOME/.local/share/applications/code.desktop"
-    chmod +x "$HOME/.local/share/applications/code.desktop"
-fi
-kbuildsycoca5 >/dev/null 2>&1 || true
+# Associate .deb files with the automatic package installer
+cat << 'EOF' > "$HOME/.config/mimeapps.list"
+[Default Applications]
+application/vnd.debian.binary-package=xrdp-deb-installer.desktop
+application/x-deb=xrdp-deb-installer.desktop
+application/x-debian-package=xrdp-deb-installer.desktop
 
-# Create "Macintosh HD" hard drive icon on the Desktop (auto-arranged to top-right)
-cat << 'EOF' > "$HOME/Desktop/Macintosh HD.desktop"
+[Added Associations]
+application/vnd.debian.binary-package=xrdp-deb-installer.desktop;
+application/x-deb=xrdp-deb-installer.desktop;
+application/x-debian-package=xrdp-deb-installer.desktop;
+EOF
+
+# ---------------------------------------------------------------------------
+# 3. Clean up any user-local code.desktop override & Create "System Drive" Icon
+# ---------------------------------------------------------------------------
+rm -f "$HOME/.local/share/applications/code.desktop"
+if [ -f /usr/share/applications/code.desktop ]; then
+    cp /usr/share/applications/code.desktop "$HOME/.local/share/applications/vscode.desktop"
+    chmod +x "$HOME/.local/share/applications/vscode.desktop"
+fi
+kbuildsycoca5 --noincremental >/dev/null 2>&1 || kbuildsycoca5 >/dev/null 2>&1 || true
+
+# Remove old "Macintosh HD" or legacy desktop icons and create "System Drive"
+rm -f "$HOME/Desktop/Macintosh HD.desktop" "$HOME/Desktop/Trash.desktop" "$HOME/Desktop/Home.desktop"
+cat << 'EOF' > "$HOME/Desktop/System Drive.desktop"
 [Desktop Entry]
 Type=Link
-Name=Macintosh HD
+Name=System Drive
 Icon=drive-harddisk-system
 URL=file:///
 EOF
-chmod +x "$HOME/Desktop/Macintosh HD.desktop"
-gio set "$HOME/Desktop/Macintosh HD.desktop" metadata::trusted true 2>/dev/null || true
-
-# Remove any legacy desktop files if present
-rm -f "$HOME/Desktop/Trash.desktop" "$HOME/Desktop/Home.desktop"
+chmod +x "$HOME/Desktop/System Drive.desktop"
+gio set "$HOME/Desktop/System Drive.desktop" metadata::trusted true 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # 4. Window Decorations & Left-Side Traffic Light Buttons
 # ---------------------------------------------------------------------------
 kwriteconfig5 --file kwinrc --group org.kde.kdecoration2 --key library "org.kde.kwin.aurorae"
 kwriteconfig5 --file kwinrc --group org.kde.kdecoration2 --key theme "__aurorae__svg__summaculate-night-opaque"
+kwriteconfig5 --file kwinrc --group kwinrc --key BorderlessMaximizedWindows "false"
 kwriteconfig5 --file kwinrc --group org.kde.kdecoration2 --key ButtonsOnLeft "XIA"
 kwriteconfig5 --file kwinrc --group org.kde.kdecoration2 --key ButtonsOnRight ""
 kwriteconfig5 --file kwinrc --group org.kde.kdecoration2 --key BorderSize "None"
@@ -154,17 +168,17 @@ for _ in $(seq 1 25); do
 done
 
 # ---------------------------------------------------------------------------
-# 6. Apply macOS Two-Panel Layout + Desktop Widgets + Top-Right Hard Drive Layout
+# 6. Apply Two-Panel Layout + Desktop Widgets + Top-Right Hard Drive Layout
 # ---------------------------------------------------------------------------
 JS_SCRIPT=$(cat << 'EOF'
-// Remove existing panels so we build a clean macOS two-panel layout
+// Remove existing panels so we build a clean two-panel layout
 var existingPanels = panels();
 for (var i = 0; i < existingPanels.length; i++) {
     existingPanels[i].remove();
 }
 
 // -------------------------------------------------------------------------
-// Top Panel -> macOS Menu Bar
+// Top Panel -> Menu Bar
 // Order: User Switcher, Window Title, Global Menu, Spacer, System Tray,
 //        Control Hub (Control Centre), Digital Clock
 // -------------------------------------------------------------------------
@@ -186,7 +200,7 @@ winTitle.currentConfigGroup = ["General"];
 winTitle.writeConfig("style", 0);
 winTitle.writeConfig("boldFont", true);
 winTitle.writeConfig("showIcon", false);
-winTitle.writeConfig("placeHolder", "Finder");
+winTitle.writeConfig("placeHolder", "");
 winTitle.writeConfig("filterActivityInfo", false);
 
 var appMenu = topPanel.addWidget("org.kde.plasma.appmenu");
@@ -224,8 +238,7 @@ clock.writeConfig("customDateFormat", "ddd MMM d");
 clock.writeConfig("use24hFormat", 0);
 
 // -------------------------------------------------------------------------
-// Bottom Panel -> macOS Dock
-// Colorful Mkos-Big-Sur app icons + Disks & Devices + Trash
+// Bottom Panel -> Animated Dock
 // -------------------------------------------------------------------------
 var dock = new Panel("org.kde.panel");
 dock.location = "bottom";
@@ -246,7 +259,7 @@ tasks.currentConfigGroup = ["General"];
 tasks.writeConfig("launchers", [
     "applications:org.kde.dolphin.desktop",
     "applications:firefox.desktop",
-    "file:///usr/share/applications/code.desktop",
+    "applications:vscode.desktop",
     "applications:org.kde.konsole.desktop",
     "applications:org.kde.kate.desktop",
     "applications:org.kde.gwenview.desktop",
@@ -271,9 +284,9 @@ var trash = dock.addWidget("org.kde.plasma.trash");
 // -------------------------------------------------------------------------
 // Desktop Containments:
 //   - Automatic icon layout to Top-Right (arrangement = 1 [Columns],
-//     alignment = 1 [Right], sortMode = 1 [Name]) so "Macintosh HD" sits at
-//     top-right like macOS
-//   - Top-Left macOS Desktop Widgets: Calendar, Weather, Analog Clock
+//     alignment = 1 [Right], sortMode = 1 [Name]) so "System Drive" sits at
+//     top-right
+//   - Top-Left Desktop Widgets: Calendar, Weather (IP-geolocated), Analog Clock
 // -------------------------------------------------------------------------
 var allDesktops = desktops();
 for (var d = 0; d < allDesktops.length; d++) {
@@ -286,12 +299,11 @@ for (var d = 0; d < allDesktops.length; d++) {
     desk.writeConfig("arrangement", 1); // Columns (top-to-bottom)
     desk.writeConfig("alignment", 1);   // Right side of screen (top-right start)
     desk.writeConfig("sortMode", 1);    // Sort by Name
-    desk.writeConfig("iconSize", 3);    // 64px macOS-style desktop drive icon
+    desk.writeConfig("iconSize", 3);    // 64px desktop drive icon
     desk.writeConfig("labelMode", 0);
     desk.writeConfig("toolTips", true);
 
     if (d === 0) {
-        // Remove any old desktop widgets before adding our 3 macOS widgets
         var oldWidgets = desk.widgets();
         for (var w = 0; w < oldWidgets.length; w++) {
             oldWidgets[w].remove();
