@@ -289,6 +289,55 @@ index 031bd48..197cac2 100644
      /** LogFilePath from sesman.ini ([ChansrvLogging]) */
      char *log_file_path;
  };
+diff --git a/sesman/chansrv/devredir.c b/sesman/chansrv/devredir.c
+index e14f5cd..b881ebe 100644
+--- a/sesman/chansrv/devredir.c
++++ b/sesman/chansrv/devredir.c
+@@ -393,7 +393,43 @@ devredir_data_in(struct stream *s, int chan_id, int chan_flags, int length,
+             break;
+ 
+         case PAKID_CORE_CLIENT_NAME:
+-            /* client is telling us its computer name; do we even care? */
++            /* client is telling us its computer name; log it so the session
++             * can label redirected drives "<Drive> on <ClientName>" */
++            if (s_check_rem(ls, 12))
++            {
++                tui32 unicode_flag;
++                tui32 name_bytes;
++                char client_name[128];
++
++                xstream_rd_u32_le(ls, unicode_flag);
++                xstream_seek(ls, 4); /* CodePage */
++                xstream_rd_u32_le(ls, name_bytes);
++                if (name_bytes > 0 && s_check_rem(ls, (int)name_bytes))
++                {
++                    g_memset(client_name, 0, sizeof(client_name));
++                    if (unicode_flag != 0)
++                    {
++                        in_utf16_le_fixed_as_utf8(ls, name_bytes / 2,
++                                                  client_name,
++                                                  sizeof(client_name));
++                    }
++                    else
++                    {
++                        unsigned int copy_len = name_bytes;
++                        if (copy_len >= sizeof(client_name))
++                        {
++                            copy_len = sizeof(client_name) - 1;
++                        }
++                        in_uint8a(ls, client_name, copy_len);
++                        client_name[copy_len] = '\0';
++                    }
++                    if (client_name[0] != '\0')
++                    {
++                        LOG(LOG_LEVEL_INFO, "RDPDR client computer name: '%s'",
++                            client_name);
++                    }
++                }
++            }
+ 
+             /* See 3.3.5.1.6 for sequencing rules */
+             if (g_client_rdp_version >= RDP_CLIENT_51)
 diff --git a/sesman/sesman.ini.in b/sesman/sesman.ini.in
 index 57a6545..30f154c 100644
 --- a/sesman/sesman.ini.in

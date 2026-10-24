@@ -87,8 +87,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     htop \
     neofetch \
+    python3 \
+    cairo-dock \
+    cairo-dock-plug-ins \
     fonts-firacode \
     fonts-inter \
+    fonts-noto-core \
+    fonts-noto-color-emoji \
+    fonts-liberation2 \
+    fontconfig \
     gimp \
     inkscape \
     vlc \
@@ -160,6 +167,7 @@ RUN install -d -m 0755 /etc/apt/keyrings && \
     echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main" \
         > /etc/apt/sources.list.d/vscode.list && \
     apt-get update && apt-get install -y --no-install-recommends firefox code && \
+    sed -i 's|/usr/share/code/code |/usr/share/code/code --no-sandbox |g' /usr/share/applications/code.desktop /usr/share/applications/code-url-handler.desktop 2>/dev/null || true && \
     rm -rf /var/lib/apt/lists/*
 
 # 3. Build pulseaudio-module-xrdp from source (neutrinolabs, v0.8).
@@ -241,7 +249,14 @@ RUN mkdir -p /usr/share/icons /usr/share/aurorae/themes /usr/share/plasma/plasmo
     && rm -rf /usr/share/plasma/plasmoids/org.kde.windowtitle/.git \
     && git clone --depth 1 https://github.com/EliverLara/kde-control-station.git /tmp/kde-control-station \
     && cp -r /tmp/kde-control-station/package /usr/share/plasma/plasmoids/com.github.prayag2.controlcentre \
-    && rm -rf /tmp/kde-control-station
+    && rm -rf /tmp/kde-control-station \
+    && mkdir -p /etc/fonts \
+    && printf '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n<fontconfig>\n  <match target="font">\n    <edit name="antialias" mode="assign"><bool>true</bool></edit>\n    <edit name="hinting" mode="assign"><bool>true</bool></edit>\n    <edit name="hintstyle" mode="assign"><const>hintslight</const></edit>\n    <edit name="rgba" mode="assign"><const>rgb</const></edit>\n    <edit name="lcdfilter" mode="assign"><const>lcddefault</const></edit>\n    <edit name="embeddedbitmap" mode="assign"><bool>false</bool></edit>\n  </match>\n</fontconfig>\n' > /etc/fonts/local.conf \
+    && fc-cache -fv >/dev/null 2>&1 || true
+
+COPY plasmoids/ /usr/share/plasma/plasmoids/
+COPY xrdp-drives-sync.py /usr/local/bin/xrdp-drives-sync.py
+RUN chmod +x /usr/local/bin/xrdp-drives-sync.py
 
 COPY assets/wow-wallpaper.jpg /usr/share/backgrounds/xrdp-wow.jpg
 COPY desktop-setup.sh /usr/local/bin/desktop-setup.sh

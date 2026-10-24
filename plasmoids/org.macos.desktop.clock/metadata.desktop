@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=macOS Clock Widget
+Comment=macOS Sonoma/Sequoia style rounded Analog Clock desktop widget
+Type=Service
+Icon=preferences-system-time
+X-KDE-ServiceTypes=Plasma/Applet
+X-Plasma-API=declarativeappletscript
+X-Plasma-MainScript=ui/main.qml
+X-KDE-PluginInfo-Author=linux-xrdp-desktop
+X-KDE-PluginInfo-Category=Date and Time
+X-KDE-PluginInfo-License=MIT
+X-KDE-PluginInfo-Name=org.macos.desktop.clock
+X-KDE-PluginInfo-Version=1.0

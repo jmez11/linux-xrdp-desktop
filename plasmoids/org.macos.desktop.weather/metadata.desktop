@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=macOS Weather Widget
+Comment=macOS Sonoma/Sequoia style rounded Weather desktop widget
+Type=Service
+Icon=weather-clouds
+X-KDE-ServiceTypes=Plasma/Applet
+X-Plasma-API=declarativeappletscript
+X-Plasma-MainScript=ui/main.qml
+X-KDE-PluginInfo-Author=linux-xrdp-desktop
+X-KDE-PluginInfo-Category=Environment and Weather
+X-KDE-PluginInfo-License=MIT
+X-KDE-PluginInfo-Name=org.macos.desktop.weather
+X-KDE-PluginInfo-Version=1.0

@@ -37,12 +37,23 @@ pulseaudio --start --exit-idle-time=-1 2>/dev/null || true
 pacmd set-default-sink xrdp-sink 2>/dev/null || true
 pacmd set-default-source xrdp-source 2>/dev/null || true
 
+# Apply smooth Xft subpixel font anti-aliasing and 96 DPI for X11 apps
+cat << 'XRES' | xrdb -merge 2>/dev/null || true
+Xft.antialias: 1
+Xft.hinting: 1
+Xft.hintstyle: hintslight
+Xft.rgba: rgb
+Xft.lcdfilter: lcddefault
+Xft.dpi: 96
+XRES
+
 exec dbus-launch --exit-with-session bash -c '
     /usr/bin/pipewire >/dev/null 2>&1 &
     /usr/bin/wireplumber >/dev/null 2>&1 &
     /usr/lib/x86_64-linux-gnu/libexec/xdg-desktop-portal-kde >/dev/null 2>&1 &
     /usr/libexec/xdg-desktop-portal-gtk >/dev/null 2>&1 &
     /usr/libexec/xdg-desktop-portal >/dev/null 2>&1 &
+    /usr/local/bin/xrdp-drives-sync.py >/dev/null 2>&1 &
     exec startplasma-x11
 '
 EOF
