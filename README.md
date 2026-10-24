@@ -1,12 +1,15 @@
 # linux-xrdp-desktop
 
-A full Ubuntu 24.04 XFCE desktop in a Docker container, accessible over RDP — with GPU-accelerated OpenGL, H.264 video encoding, webcam redirection (`[MS-RDPECAM]`), audio, and drive redirection. Built for a fast, responsive remote Linux desktop that actually plays video smoothly.
+A full Ubuntu 24.04 **KDE Plasma** desktop in a Docker container, styled to look and feel like **macOS** — accessible over RDP with GPU-accelerated OpenGL, H.264 video encoding, webcam redirection (`[MS-RDPECAM]`), audio, and drive redirection. Built for a fast, responsive remote Linux desktop that actually plays video smoothly.
 
 ![Desktop](assets/wow-wallpaper.jpg)
 
 ## Features
 
-- **Ubuntu 24.04 + XFCE** — Arc-Dark theme, Papirus icons, dark aurora wallpaper
+- **Ubuntu 24.04 + KDE Plasma (macOS layout & styling)** — Configured out-of-the-box with the [How-To Geek KDE Plasma macOS transformation](https://www.howtogeek.com/heres-how-i-made-linux-feel-more-like-macos-using-kde-plasma/):
+  - **Top macOS Menu Bar** — Translucent top bar with User Switcher (profile icon), bold active Window Title (`%a`), Global Application Menu, System Tray, macOS-style Control Hub / Control Centre, and Digital Clock (`MMM dd` beside time)
+  - **Bottom macOS Dock** — Centered floating Icons-Only Task Manager (`Fill Content` width, `Dodge Windows` visibility, 48px height) + Disks & Devices widget
+  - **Mkos-Big-Sur icons & Summaculate traffic-light window controls** — macOS Big Sur icon pack with Close/Minimize/Maximize traffic-light buttons positioned on the **top-left** (`ButtonsOnLeft=XIA`)
 - **H.264 RDP encoding** — xrdp 0.10.3 + xorgxrdp 0.10.3 built from source with x264 (Ubuntu's xrdp 0.9.x has no H.264 support). Smooth video playback and snappy window dragging at 1080p
 - **Webcam redirection (`[MS-RDPECAM]`)** — client cameras redirected over RDP Dynamic Virtual Channels (`RDPECAM`) are decoded (H.264 via OpenH264, plus raw YUY2/NV12/I420) and published as native PipeWire `Video/Source` camera nodes inside the container (no host `v4l2loopback` kernel module required)
 - **TLS-encrypted** RDP on port 3389, multi-monitor support
@@ -14,7 +17,7 @@ A full Ubuntu 24.04 XFCE desktop in a Docker container, accessible over RDP — 
 - **Drive redirection** — share client drives, they appear at `~/thinclient_drives/` via FUSE
 - **Clipboard** redirection
 - **VirtualGL** — GPU-accelerated OpenGL for headless servers (`vglrun glmark2` to test)
-- **Preinstalled apps** — Firefox, VS Code, GIMP, Inkscape, VLC, LibreOffice, Blender, htop, neofetch, git
+- **Preinstalled apps** — Dolphin, Konsole, Kate, Gwenview, Okular, Spectacle, KRunner (`Alt+Space`), Firefox, VS Code, GIMP, Inkscape, VLC, LibreOffice, Blender, htop, neofetch, git
 
 ## Quick start
 
@@ -55,13 +58,13 @@ For the full experience, set these **before connecting** (Show Options):
 - **Audio playback** — Local Resources → Remote audio → Settings → *Play on this computer*
 - **Microphone** — same dialog → *Record from this computer*
 
-Drive shares only take effect on a fresh login — if you tick them mid-session, log out of XFCE completely and reconnect.
+Drive shares only take effect on a fresh login — if you tick them mid-session, log out of KDE Plasma completely and reconnect.
 
 ## How it works
 
-- `Dockerfile` builds everything: desktop environment, apps, then compiles xrdp 0.10.3 + xorgxrdp 0.10.3 from source with `--enable-x264` and `--enable-rdpecam` (`xrdp-rdpecam/`, bringing `[MS-RDPECAM]` video capture + PipeWire camera sink to `xrdp-chansrv`). Build dependencies are purged in-layer; a build-time check fails the image if any xrdp binary has missing shared libraries.
-- `entrypoint.sh` creates the user, fixes home-directory ownership (Docker volumes mount root-owned, which breaks Xorg), prepares `/run/user/$UID` (`XDG_RUNTIME_DIR`), starts PipeWire + WirePlumber + XDG Desktop Portal alongside PulseAudio in `.xsession`, writes XFCE autostart entries, and launches `xrdp-sesman` + `xrdp`.
-- `desktop-setup.sh` applies theming on first login (sentinel-gated, so your tweaks persist).
+- `Dockerfile` builds everything: KDE Plasma desktop environment, macOS-style plasmoids (`org.kde.windowtitle`, `com.github.prayag2.controlcentre`), `Mkos-Big-Sur` icons, `Summaculate` Aurorae window decorations, apps, and then compiles xrdp 0.10.3 + xorgxrdp 0.10.3 from source with `--enable-x264` and `--enable-rdpecam` (`xrdp-rdpecam/`, bringing `[MS-RDPECAM]` video capture + PipeWire camera sink to `xrdp-chansrv`). Build dependencies are purged in-layer; a build-time check fails the image if any xrdp binary has missing shared libraries.
+- `entrypoint.sh` creates the user, fixes home-directory ownership (Docker volumes mount root-owned, which breaks Xorg), prepares `/run/user/$UID` (`XDG_RUNTIME_DIR`), starts PipeWire + WirePlumber + XDG Desktop Portal (KDE + GTK) alongside PulseAudio in `.xsession`, writes autostart entries, and launches `xrdp-sesman` + `xrdp`.
+- `desktop-setup.sh` applies the KDE Plasma macOS two-panel layout, Mkos-Big-Sur icon theme, Summaculate left-aligned traffic-light window buttons, and Breeze Dark color scheme on first login (sentinel-gated, so your tweaks persist).
 - `pulseaudio-module-xrdp` is built from source against the image's PulseAudio (not packaged for 24.04).
 
 ## Limitations

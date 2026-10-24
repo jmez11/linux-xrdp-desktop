@@ -2,21 +2,53 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1. Desktop environment and GPU/Hardware acceleration packages
+# 1. Desktop environment (KDE Plasma) and GPU/Hardware acceleration packages
 #    Notes: libgl1-mesa-glx is not shipped in Ubuntu 24.04 (superseded by libgl1);
 #    pulseaudio-module-xrdp is not packaged in 24.04 either and is built from
-#    source in step 3 below; xrdp/xorgxrdp are built from source with x264 in
-#    step 1b (Ubuntu's xrdp 0.9.24 has no H.264 support at all), so xserver-xorg-core
-#    (pulled in by xorgxrdp's apt package) and libx264-164 (the encoder runtime)
-#    are installed explicitly here.
+#    source in step 3 below; xrdp/xorgxrdp are built from source with x264 and
+#    [MS-RDPECAM] in step 1b (Ubuntu's xrdp 0.9.24 has no H.264 support at all),
+#    so xserver-xorg-core (pulled in by xorgxrdp's apt package) and libx264-164
+#    (the encoder runtime) are installed explicitly here.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xserver-xorg-core \
     libx264-164 \
     libfuse3-3 \
     fuse3 \
     libopus0 \
-    xfce4 \
-    xfce4-goodies \
+    plasma-desktop \
+    plasma-workspace \
+    plasma-widgets-addons \
+    plasma-pa \
+    plasma-nm \
+    kdeconnect \
+    kwin-x11 \
+    kde-cli-tools \
+    kde-style-breeze \
+    breeze \
+    breeze-icon-theme \
+    breeze-cursor-theme \
+    breeze-gtk-theme \
+    kde-config-gtk-style \
+    systemsettings \
+    konsole \
+    dolphin \
+    kate \
+    ark \
+    gwenview \
+    okular \
+    spectacle \
+    kcalc \
+    appmenu-gtk3-module \
+    appmenu-gtk2-module \
+    libdbusmenu-glib4 \
+    libdbusmenu-gtk3-4 \
+    libdbusmenu-qt5-2 \
+    qml-module-qtgraphicaleffects \
+    qml-module-qtquick-controls2 \
+    qml-module-qtquick-layouts \
+    qml-module-org-kde-bluezqt \
+    qml-module-org-kde-kquickcontrolsaddons \
+    libqt5svg5 \
     x11-xserver-utils \
     xfonts-base \
     dbus-x11 \
@@ -47,6 +79,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pipewire-v4l2 \
     wireplumber \
     xdg-desktop-portal \
+    xdg-desktop-portal-kde \
     xdg-desktop-portal-gtk \
     v4l-utils \
     gstreamer1.0-pipewire \
@@ -54,9 +87,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     htop \
     neofetch \
-    arc-theme \
-    papirus-icon-theme \
     fonts-firacode \
+    fonts-inter \
     gimp \
     inkscape \
     vlc \
@@ -191,7 +223,26 @@ RUN openssl req -x509 -newkey rsa:2048 -nodes \
     chown root:root /etc/xrdp/key.pem /etc/xrdp/cert.pem && \
     chmod 600 /etc/xrdp/key.pem
 
-# 9. Desktop wow factor: wallpaper + first-run beautification script
+# 9. Desktop wow factor: macOS-style KDE Plasma assets (How-To Geek guide):
+#    - Mkos-Big-Sur icon theme (zayronxio/Mkos-Big-Sur)
+#    - Summaculate Aurorae window decorations (doncsugar/sumac-theme)
+#    - Window Title applet (org.kde.windowtitle)
+#    - Control Centre / Control Hub applet (EliverLara/kde-control-station)
+#    - Wallpaper + first-run KDE Plasma macOS layout & appearance setup script
+RUN mkdir -p /usr/share/icons /usr/share/aurorae/themes /usr/share/plasma/plasmoids \
+    && git clone --depth 1 https://github.com/zayronxio/Mkos-Big-Sur.git /usr/share/icons/Mkos-Big-Sur \
+    && rm -rf /usr/share/icons/Mkos-Big-Sur/.git /usr/share/icons/Mkos-Big-Sur/preview-icons-apps \
+    && gtk-update-icon-cache -f /usr/share/icons/Mkos-Big-Sur 2>/dev/null || true \
+    && git clone --depth 1 https://github.com/doncsugar/sumac-theme.git /tmp/sumac-theme \
+    && cp -r /tmp/sumac-theme/aurorae/summaculate/* /usr/share/aurorae/themes/ \
+    && cp -r /tmp/sumac-theme/aurorae/sumac/* /usr/share/aurorae/themes/ \
+    && rm -rf /tmp/sumac-theme \
+    && git clone --depth 1 https://github.com/psifidotos/applet-window-title.git /usr/share/plasma/plasmoids/org.kde.windowtitle \
+    && rm -rf /usr/share/plasma/plasmoids/org.kde.windowtitle/.git \
+    && git clone --depth 1 https://github.com/EliverLara/kde-control-station.git /tmp/kde-control-station \
+    && cp -r /tmp/kde-control-station/package /usr/share/plasma/plasmoids/com.github.prayag2.controlcentre \
+    && rm -rf /tmp/kde-control-station
+
 COPY assets/wow-wallpaper.jpg /usr/share/backgrounds/xrdp-wow.jpg
 COPY desktop-setup.sh /usr/local/bin/desktop-setup.sh
 RUN chmod +x /usr/local/bin/desktop-setup.sh

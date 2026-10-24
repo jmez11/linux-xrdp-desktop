@@ -19,13 +19,18 @@ mkdir -p -m 0700 "/run/user/$USER_UID"
 chown "$USERNAME:$USERNAME" "/run/user/$USER_UID"
 
 # User Xsession initialization: start PulseAudio, PipeWire camera graph + XDG
-# portal, and XFCE under DBus. Written idempotently on every container start so
-# existing persistent /home volumes pick up PipeWire camera redirection.
+# portal, and KDE Plasma (X11) under DBus. Written idempotently on every container
+# start so existing persistent /home volumes pick up KDE Plasma + PipeWire camera redirection.
 mkdir -p "/home/$USERNAME"
 cat << 'EOF' > "/home/$USERNAME/.xsession"
 #!/bin/bash
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-export XDG_CURRENT_DESKTOP="XFCE"
+export XDG_SESSION_TYPE="x11"
+export XDG_CURRENT_DESKTOP="KDE"
+export XDG_SESSION_DESKTOP="KDE"
+export KDE_FULL_SESSION="true"
+export KDE_SESSION_VERSION="5"
+export QT_QPA_PLATFORM="xcb"
 mkdir -p -m 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
 
 pulseaudio --start --exit-idle-time=-1 2>/dev/null || true
@@ -35,9 +40,10 @@ pacmd set-default-source xrdp-source 2>/dev/null || true
 exec dbus-launch --exit-with-session bash -c '
     /usr/bin/pipewire >/dev/null 2>&1 &
     /usr/bin/wireplumber >/dev/null 2>&1 &
+    /usr/lib/x86_64-linux-gnu/libexec/xdg-desktop-portal-kde >/dev/null 2>&1 &
     /usr/libexec/xdg-desktop-portal-gtk >/dev/null 2>&1 &
     /usr/libexec/xdg-desktop-portal >/dev/null 2>&1 &
-    exec startxfce4
+    exec startplasma-x11
 '
 EOF
 chmod +x "/home/$USERNAME/.xsession"
