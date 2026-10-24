@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xserver-xorg-core \
     libx264-164 \
     libfuse3-3 \
+    fuse3 \
     libopus0 \
     xfce4 \
     xfce4-goodies \
