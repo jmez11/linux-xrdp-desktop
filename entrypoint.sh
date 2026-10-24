@@ -6,10 +6,13 @@ PASSWORD=${RDP_PASS:-ChangeMe123!}
 
 # Create isolated local user if missing
 if ! id -u "$USERNAME" >/dev/null 2>&1; then
-    useradd -m -s /bin/bash "$USERNAME"
+    useradd -m -s /bin/bash -c "$USERNAME" "$USERNAME"
     echo "$USERNAME:$PASSWORD" | chpasswd
     usermod -aG sudo "$USERNAME"
     usermod -aG video,render,audio "$USERNAME" 2>/dev/null || true
+fi
+if [ -z "$(getent passwd "$USERNAME" | cut -d: -f5)" ]; then
+    chfn -f "$USERNAME" "$USERNAME" 2>/dev/null || usermod -c "$USERNAME" "$USERNAME" 2>/dev/null || true
 fi
 
 # Grant passwordless sudo for package management & administrative tasks inside the container
@@ -54,6 +57,7 @@ XRES
 exec dbus-launch --exit-with-session bash -c '
     /usr/bin/pipewire >/dev/null 2>&1 &
     /usr/bin/wireplumber >/dev/null 2>&1 &
+    /usr/lib/x86_64-linux-gnu/libexec/polkit-kde-authentication-agent-1 >/dev/null 2>&1 &
     /usr/lib/x86_64-linux-gnu/libexec/xdg-desktop-portal-kde >/dev/null 2>&1 &
     /usr/libexec/xdg-desktop-portal-gtk >/dev/null 2>&1 &
     /usr/libexec/xdg-desktop-portal >/dev/null 2>&1 &
@@ -128,6 +132,22 @@ for pidfile in /var/run/xrdp-sesman.pid /var/run/xrdp.pid; do
             rm -f "$pidfile"
         fi
     fi
+done
+
+# Start system D-Bus, polkitd, and AccountsService so KDE System Settings
+# (Users KCM, Change Avatar, etc.) and desktop portals have a working system bus.
+mkdir -p /var/run/dbus /var/lib/AccountsService/users /var/lib/AccountsService/icons
+rm -f /var/run/dbus/pid
+dbus-uuidgen --ensure 2>/dev/null || true
+dbus-daemon --system --fork 2>/dev/null || true
+if [ ! -f "/var/lib/AccountsService/users/$USERNAME" ]; then
+    printf '[User]\nSystemAccount=false\n' > "/var/lib/AccountsService/users/$USERNAME"
+fi
+for bin in /usr/lib/polkit-1/polkitd /usr/libexec/polkitd; do
+    if [ -x "$bin" ]; then "$bin" --no-debug >/dev/null 2>&1 & break; fi
+done
+for bin in /usr/libexec/accounts-daemon /usr/lib/accountsservice/accounts-daemon; do
+    if [ -x "$bin" ]; then "$bin" >/dev/null 2>&1 & break; fi
 done
 
 /usr/sbin/xrdp-sesman

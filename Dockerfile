@@ -55,6 +55,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11-xserver-utils \
     xfonts-base \
     dbus-x11 \
+    accountsservice \
+    polkitd \
+    pkexec \
+    polkit-kde-agent-1 \
     sudo \
     curl \
     openssl \
@@ -261,7 +265,11 @@ RUN mkdir -p /usr/share/icons /usr/share/aurorae/themes /usr/share/plasma/plasmo
     && printf '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n<fontconfig>\n  <match target="font">\n    <edit name="antialias" mode="assign"><bool>true</bool></edit>\n    <edit name="hinting" mode="assign"><bool>true</bool></edit>\n    <edit name="hintstyle" mode="assign"><const>hintslight</const></edit>\n    <edit name="rgba" mode="assign"><const>rgb</const></edit>\n    <edit name="lcdfilter" mode="assign"><const>lcddefault</const></edit>\n    <edit name="embeddedbitmap" mode="assign"><bool>false</bool></edit>\n  </match>\n</fontconfig>\n' > /etc/fonts/local.conf \
     && fc-cache -fv >/dev/null 2>&1 || true \
     && printf '[Desktop Entry]\nType=Application\nName=Automatic Package Installer\nComment=Automatically install .deb packages and update sources\nExec=/usr/local/bin/xrdp-deb-installer.sh %%F\nIcon=system-software-install\nTerminal=false\nNoDisplay=true\nMimeType=application/vnd.debian.binary-package;application/x-deb;application/x-debian-package;\n' > /usr/share/applications/xrdp-deb-installer.desktop \
-    && update-desktop-database /usr/share/applications 2>/dev/null || true
+    && update-desktop-database /usr/share/applications 2>/dev/null || true \
+    && mkdir -p /etc/polkit-1/rules.d /var/lib/polkit-1/localauthority/50-local.d \
+    && printf 'polkit.addRule(function(action, subject) {\n    if (subject.isInGroup("sudo")) {\n        return polkit.Result.YES;\n    }\n});\n' > /etc/polkit-1/rules.d/49-nopasswd-sudo.rules \
+    && printf '[Allow all polkit actions for sudo group]\nIdentity=unix-group:sudo\nAction=*\nResultAny=yes\nResultInactive=yes\nResultActive=yes\n' > /var/lib/polkit-1/localauthority/50-local.d/49-nopasswd-sudo.pkla \
+    && python3 -c 'p="/usr/share/kpackage/kcms/kcm_users/contents/ui/PicturesSheet.qml"; import os; s=open(p).read() if os.path.exists(p) else ""; s=s.replace("contentItem: QQC2.SwipeView {\n        id: stackSwitcher", "contentItem: Item {\n        id: stackSwitcher\n        property int currentIndex: 0\n        clip: true\n        implicitHeight: currentIndex === 0 ? cols.implicitHeight : (currentIndex === 1 ? initialPictures.implicitHeight : iconPictures.implicitHeight)\n        Layout.fillWidth: true").replace("setCurrentIndex(-1)\n            setCurrentIndex(index)", "currentIndex = index").replace("ColumnLayout {\n            id: cols", "ColumnLayout {\n            id: cols\n            width: stackSwitcher.width\n            visible: stackSwitcher.currentIndex === 0").replace("ColumnLayout {\n            id: initialPictures", "ColumnLayout {\n            id: initialPictures\n            width: stackSwitcher.width\n            visible: stackSwitcher.currentIndex === 1").replace("ColumnLayout {\n            id: iconPictures", "ColumnLayout {\n            id: iconPictures\n            width: stackSwitcher.width\n            visible: stackSwitcher.currentIndex === 2").replace("initialPictures.QQC2.SwipeView.index", "1").replace("iconPictures.QQC2.SwipeView.index", "2").replace("cols.QQC2.SwipeView.index", "0").replace("Kirigami.ShadowedTexture {", "Image {\n                            asynchronous: true\n                            smooth: true\n                            mipmap: true\n                            fillMode: Image.PreserveAspectCrop\n                            // ").replace("source: imgDelegate", "source: modelData"); open(p,"w").write(s) if s else None'
 
 COPY plasmoids/ /usr/share/plasma/plasmoids/
 COPY xrdp-drives-sync.py /usr/local/bin/xrdp-drives-sync.py
