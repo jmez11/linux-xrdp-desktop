@@ -48,7 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wireplumber \
     xdg-desktop-portal \
     xdg-desktop-portal-gtk \
-    v4l2-utils \
+    v4l-utils \
     gstreamer1.0-pipewire \
     gnupg \
     git \
