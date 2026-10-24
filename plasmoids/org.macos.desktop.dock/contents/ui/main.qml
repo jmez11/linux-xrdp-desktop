@@ -36,7 +36,7 @@ Item {
         id: dockModel
         ListElement { name: "Dolphin"; appMatch: "dolphin"; iconName: "/usr/share/icons/breeze-dark/apps/48/system-file-manager.svg"; cmd: "dolphin"; isSeparatorBefore: false }
         ListElement { name: "Firefox"; appMatch: "firefox"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/firefox.svg"; cmd: "firefox"; isSeparatorBefore: false }
-        ListElement { name: "Visual Studio Code"; appMatch: "code"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/vscode.svg"; cmd: "/usr/share/code/code --no-sandbox"; isSeparatorBefore: false }
+        ListElement { name: "Visual Studio Code"; appMatch: "code"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/vscode.svg"; cmd: "/usr/local/bin/vscode-launch"; isSeparatorBefore: false }
         ListElement { name: "Konsole"; appMatch: "konsole"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/utilities-terminal.svg"; cmd: "konsole"; isSeparatorBefore: false }
         ListElement { name: "Kate"; appMatch: "kate"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/kate.svg"; cmd: "kate"; isSeparatorBefore: false }
         ListElement { name: "Gwenview"; appMatch: "gwenview"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/gwenview.svg"; cmd: "gwenview"; isSeparatorBefore: false }
@@ -65,6 +65,26 @@ Item {
             }
         }
         return -1;
+    }
+
+    // Keep the dock widget dynamically centered at the bottom middle of the desktop
+    function centerOnDesktop() {
+        if (root.parent && root.parent.parent && root.parent.parent.width > 200 && root.parent.parent.height > 200) {
+            var deskItem = root.parent.parent;
+            var targetX = Math.round((deskItem.width - root.parent.width) / 2);
+            var targetY = Math.round(deskItem.height - root.parent.height - 4);
+            if (Math.abs(root.parent.x - targetX) > 2) root.parent.x = targetX;
+            if (Math.abs(root.parent.y - targetY) > 2) root.parent.y = targetY;
+        }
+    }
+
+    Component.onCompleted: centerOnDesktop()
+
+    Timer {
+        interval: 600
+        running: true
+        repeat: true
+        onTriggered: root.centerOnDesktop()
     }
 
     // Translucent rounded glass dock pill along the bottom

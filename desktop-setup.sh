@@ -20,7 +20,7 @@
 #   7. Left-aligned traffic-light window controls (Summaculate Aurorae, XIA).
 set -u
 
-SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v4.done"
+SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v5.done"
 [ -f "$SENTINEL" ] && exit 0
 
 WALLPAPER="/usr/share/backgrounds/xrdp-wow.jpg"
@@ -273,9 +273,9 @@ for (var d = 0; d < allDesktops.length; d++) {
         var dockW = desk.addWidget("org.macos.desktop.dock");
 
         function makeGeom(scrW, scrH) {
-            var dockWidth = Math.min(1120, scrW - 32);
+            var dockWidth = Math.min(1020, scrW - 32);
             var dockX = Math.max(16, Math.round((scrW - dockWidth) / 2));
-            var dockY = Math.max(420, scrH - 122);
+            var dockY = Math.max(420, scrH - 120);
             return "Applet-" + calW.id + ":16,38,184,184,0;" +
                    "Applet-" + weaW.id + ":204,38,184,184,0;" +
                    "Applet-" + clkW.id + ":16,226,184,184,0;" +
@@ -288,10 +288,15 @@ for (var d = 0; d < allDesktops.length; d++) {
 
         desk.writeConfig("ItemGeometriesHorizontal", makeGeom(curW, curH));
         desk.writeConfig("ItemGeometries-" + curW + "x" + curH, makeGeom(curW, curH));
-        desk.writeConfig("ItemGeometries-1920x1080", makeGeom(1920, 1080));
-        desk.writeConfig("ItemGeometries-2560x1440", makeGeom(2560, 1440));
-        desk.writeConfig("ItemGeometries-1600x900", makeGeom(1600, 900));
-        desk.writeConfig("ItemGeometries-1366x768", makeGeom(1366, 768));
+        var commonRes = [
+            [1920, 1080], [2560, 1440], [3840, 2160], [1920, 1200],
+            [1680, 1050], [1600, 900], [1440, 900], [1366, 768], [1280, 720], [1280, 800], [2560, 1600]
+        ];
+        for (var r = 0; r < commonRes.length; r++) {
+            var rw = commonRes[r][0];
+            var rh = commonRes[r][1];
+            desk.writeConfig("ItemGeometries-" + rw + "x" + rh, makeGeom(rw, rh));
+        }
     }
 }
 EOF

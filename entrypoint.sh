@@ -140,8 +140,13 @@ mkdir -p /var/run/dbus /var/lib/AccountsService/users /var/lib/AccountsService/i
 rm -f /var/run/dbus/pid
 dbus-uuidgen --ensure 2>/dev/null || true
 dbus-daemon --system --fork 2>/dev/null || true
+if [ ! -f "/home/$USERNAME/.face.icon" ] && [ -f /usr/share/plasma/avatars/photos/Astronaut.png ]; then
+    cp /usr/share/plasma/avatars/photos/Astronaut.png "/home/$USERNAME/.face.icon"
+    cp /usr/share/plasma/avatars/photos/Astronaut.png "/var/lib/AccountsService/icons/$USERNAME"
+    chown "$USERNAME:$USERNAME" "/home/$USERNAME/.face.icon"
+fi
 if [ ! -f "/var/lib/AccountsService/users/$USERNAME" ]; then
-    printf '[User]\nSystemAccount=false\n' > "/var/lib/AccountsService/users/$USERNAME"
+    printf '[User]\nSystemAccount=false\nIcon=/var/lib/AccountsService/icons/%s\n' "$USERNAME" > "/var/lib/AccountsService/users/$USERNAME"
 fi
 for bin in /usr/lib/polkit-1/polkitd /usr/libexec/polkitd; do
     if [ -x "$bin" ]; then "$bin" --no-debug >/dev/null 2>&1 & break; fi
