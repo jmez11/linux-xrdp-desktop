@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ark \
     gwenview \
     okular \
-    spectacle \
+    kde-spectacle \
     kcalc \
     appmenu-gtk3-module \
     appmenu-gtk2-module \
