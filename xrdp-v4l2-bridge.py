@@ -309,13 +309,16 @@ def main():
                         err_log = subprocess.DEVNULL
 
                     # For single camera: standard pipewiresrc connects to default Video/Source without name lookup issues.
-                    # For multiple cameras: explicitly target the numeric object serial/path.
+                    # For multiple cameras: explicitly target the PipeWire node ID via path=<cam_id>.
                     if num_cams == 1:
                         src_args = ["pipewiresrc"]
                     else:
-                        src_args = ["pipewiresrc", f"path={cam_id}", f"target-object={cam_serial}"]
+                        src_args = ["pipewiresrc", f"path={cam_id}"]
 
-                    cmd = src_args + [
+                    cmd = [
+                        "gst-launch-1.0",
+                        "-q",
+                    ] + src_args + [
                         "!", "videoconvert",
                         "!", "videoscale",
                         "!", "video/x-raw,format=YUY2",

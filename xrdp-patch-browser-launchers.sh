@@ -21,6 +21,11 @@ if [ -x "$ZOOM_WRAPPER" ] && [ -d /opt/zoom ]; then
     $SUDO ln -sf "$ZOOM_WRAPPER" /usr/bin/zoom 2>/dev/null || true
 fi
 
+OBS_WRAPPER="/usr/local/bin/obs-launcher-wrapper"
+if [ -x "$OBS_WRAPPER" ] && [ -x /usr/bin/obs ]; then
+    $SUDO ln -sf "$OBS_WRAPPER" /usr/local/bin/obs 2>/dev/null || true
+fi
+
 for bin in microsoft-edge microsoft-edge-stable google-chrome google-chrome-stable brave-browser chromium chromium-browser; do
     REAL_EXISTS=0
     case "$bin" in
@@ -48,6 +53,12 @@ for dir in "${DESKTOP_DIRS[@]}"; do
         [ -f "$d" ] || continue
         if [ -x "$ZOOM_WRAPPER" ]; then
             $SUDO sed -i 's|^Exec=.*|Exec=/usr/local/bin/zoom %U|' "$d" 2>/dev/null || true
+        fi
+    done
+    for d in "$dir"/com.obsproject.Studio.desktop "$dir"/obs.desktop; do
+        [ -f "$d" ] || continue
+        if [ -x "$OBS_WRAPPER" ]; then
+            $SUDO sed -i 's|^Exec=.*|Exec=/usr/local/bin/obs %U|' "$d" 2>/dev/null || true
         fi
     done
     for d in "$dir"/microsoft-edge*.desktop "$dir"/google-chrome*.desktop "$dir"/chromium*.desktop "$dir"/brave*.desktop; do
