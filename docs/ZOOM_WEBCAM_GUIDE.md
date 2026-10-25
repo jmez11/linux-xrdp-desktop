@@ -42,15 +42,24 @@ On the **host machine** running Docker (or Portainer):
 # Install the loopback kernel module if not already installed
 sudo apt update && sudo apt install -y v4l2loopback-dkms
 
-# Load the module with exclusive_caps=1 (strictly required by Zoom and Chromium)
+# Load the module immediately for the current boot (with exclusive_caps=1 strictly required by Zoom)
 sudo modprobe v4l2loopback devices=1 video_nr=0 card_label="XRDP Camera" exclusive_caps=1
 ```
 
-To ensure this module loads automatically on host reboot, create `/etc/modprobe.d/v4l2loopback.conf`:
-```text
-options v4l2loopback devices=1 video_nr=0 card_label="XRDP Camera" exclusive_caps=1
-```
-and add `v4l2loopback` to `/etc/modules-load.d/v4l2loopback.conf`.
+#### Make it Persistent Across Host Reboots (Optional)
+To automatically reload `v4l2loopback` with these options every time your Docker host boots, create the system configuration files with standard root read-only permissions (`chmod 644`):
+
+1. **Module Options** (`/etc/modprobe.d/v4l2loopback.conf`):
+   ```bash
+   echo 'options v4l2loopback devices=1 video_nr=0 card_label="XRDP Camera" exclusive_caps=1' | sudo tee /etc/modprobe.d/v4l2loopback.conf
+   sudo chmod 644 /etc/modprobe.d/v4l2loopback.conf
+   ```
+
+2. **Auto-Load on Boot** (`/etc/modules-load.d/v4l2loopback.conf`):
+   ```bash
+   echo "v4l2loopback" | sudo tee /etc/modules-load.d/v4l2loopback.conf
+   sudo chmod 644 /etc/modules-load.d/v4l2loopback.conf
+   ```
 
 ### Step 2: Pass `/dev/video0` into your Container
 
