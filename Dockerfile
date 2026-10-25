@@ -274,8 +274,7 @@ RUN mkdir -p /usr/share/icons /usr/share/aurorae/themes /usr/share/plasma/plasmo
     && printf 'polkit.addRule(function(action, subject) {\n    if (subject.isInGroup("sudo")) {\n        return polkit.Result.YES;\n    }\n});\n' > /etc/polkit-1/rules.d/49-nopasswd-sudo.rules \
     && printf '[Allow all polkit actions for sudo group]\nIdentity=unix-group:sudo\nAction=*\nResultAny=yes\nResultInactive=yes\nResultActive=yes\n' > /var/lib/polkit-1/localauthority/50-local.d/49-nopasswd-sudo.pkla \
     && rm -f /etc/X11/Xsession.d/*appmenu* 2>/dev/null || true \
-    && echo "UBUNTU_MENUPROXY=0" >> /etc/environment \
-    && echo "CYCLES_ONEAPI_ALL_DEVICES=1" >> /etc/environment
+    && echo "UBUNTU_MENUPROXY=0" >> /etc/environment
 
 # 4b. Install official Blender 4.2 LTS Foundation build (includes Intel oneAPI / SYCL Cycles GPU support)
 RUN mkdir -p /opt/blender \

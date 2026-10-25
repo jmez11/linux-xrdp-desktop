@@ -13,8 +13,12 @@ if [ -e "/usr/share/zoneinfo/$TZ_VALUE" ]; then
     echo "TZ=$TZ_VALUE" >> /etc/environment
 fi
 
-sed -i '/^CYCLES_ONEAPI_ALL_DEVICES=/d' /etc/environment 2>/dev/null || true
-echo "CYCLES_ONEAPI_ALL_DEVICES=1" >> /etc/environment
+if [ -n "$CYCLES_ONEAPI_ALL_DEVICES" ]; then
+    sed -i '/^CYCLES_ONEAPI_ALL_DEVICES=/d' /etc/environment 2>/dev/null || true
+    echo "CYCLES_ONEAPI_ALL_DEVICES=$CYCLES_ONEAPI_ALL_DEVICES" >> /etc/environment
+else
+    sed -i '/^CYCLES_ONEAPI_ALL_DEVICES=/d' /etc/environment 2>/dev/null || true
+fi
 
 # Create isolated local user if missing
 if ! id -u "$USERNAME" >/dev/null 2>&1; then
@@ -97,7 +101,9 @@ export KDE_SESSION_VERSION="5"
 export QT_QPA_PLATFORM="xcb"
 unset GTK_MODULES GTK3_MODULES
 export UBUNTU_MENUPROXY=0
-export CYCLES_ONEAPI_ALL_DEVICES=1
+if [ -n "$CYCLES_ONEAPI_ALL_DEVICES" ]; then
+    export CYCLES_ONEAPI_ALL_DEVICES="$CYCLES_ONEAPI_ALL_DEVICES"
+fi
 if [ -f /etc/timezone ]; then
     export TZ="$(cat /etc/timezone)"
 elif [ -e /etc/localtime ]; then

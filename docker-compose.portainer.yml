@@ -14,6 +14,9 @@ services:
       - TZ=UTC
       # Set to 'iHD' for Intel, 'radeonsi' for AMD. Omit if using NVIDIA.
       - LIBVA_DRIVER_NAME=iHD
+      # Optional: Uncomment ONLY if you need to force Blender oneAPI on older/unsupported Intel GPUs.
+      # (Leave commented out for Intel Arc or systems with integrated graphics to prevent crashes).
+      # - CYCLES_ONEAPI_ALL_DEVICES=1
     # 2GB shared memory is required to prevent Xorg crashing across multi-monitor setups
     shm_size: '2gb'
     devices:
