@@ -20,9 +20,72 @@ else
     sed -i '/^CYCLES_ONEAPI_ALL_DEVICES=/d' /etc/environment 2>/dev/null || true
 fi
 
-# Create isolated local user if missing
-if ! id -u "$USERNAME" >/dev/null 2>&1; then
-    useradd -m -s /bin/bash -c "$USERNAME" "$USERNAME"
+# Create or configure isolated local user with optional PUID/PGID host mapping
+PUID=${PUID:-}
+PGID=${PGID:-}
+
+# Handle conflicting default 'ubuntu' user/group in Ubuntu noble if PUID/PGID requested
+if id "ubuntu" >/dev/null 2>&1 && [ "$USERNAME" != "ubuntu" ]; then
+    UBUNTU_UID=$(id -u ubuntu 2>/dev/null || true)
+    UBUNTU_GID=$(id -g ubuntu 2>/dev/null || true)
+    if [ -n "$PUID" ] && [ "$UBUNTU_UID" = "$PUID" ]; then
+        userdel -r ubuntu 2>/dev/null || true
+    fi
+    if [ -n "$PGID" ] && [ "$UBUNTU_GID" = "$PGID" ]; then
+        groupdel ubuntu 2>/dev/null || true
+    fi
+fi
+
+# If another user currently owns the requested PUID, reassign it
+if [ -n "$PUID" ]; then
+    CONFLICT_USER=$(getent passwd "$PUID" | cut -d: -f1 || true)
+    if [ -n "$CONFLICT_USER" ] && [ "$CONFLICT_USER" != "$USERNAME" ]; then
+        userdel -r "$CONFLICT_USER" 2>/dev/null || usermod -u 9999 "$CONFLICT_USER" 2>/dev/null || true
+    fi
+fi
+
+# If another group currently owns the requested PGID, reassign it
+if [ -n "$PGID" ]; then
+    CONFLICT_GROUP=$(getent group "$PGID" | cut -d: -f1 || true)
+    if [ -n "$CONFLICT_GROUP" ] && [ "$CONFLICT_GROUP" != "$USERNAME" ]; then
+        groupdel "$CONFLICT_GROUP" 2>/dev/null || groupmod -g 9999 "$CONFLICT_GROUP" 2>/dev/null || true
+    fi
+fi
+
+if ! id "$USERNAME" >/dev/null 2>&1; then
+    GROUP_FLAG=""
+    if [ -n "$PGID" ]; then
+        if ! getent group "$PGID" >/dev/null 2>&1; then
+            groupadd -g "$PGID" "$USERNAME" 2>/dev/null || true
+        fi
+        GROUP_FLAG="-g $PGID"
+    fi
+
+    UID_FLAG=""
+    if [ -n "$PUID" ]; then
+        UID_FLAG="-u $PUID"
+    fi
+
+    useradd -m -s /bin/bash $UID_FLAG $GROUP_FLAG -c "$USERNAME" "$USERNAME"
+    echo "$USERNAME:$PASSWORD" | chpasswd
+    usermod -aG sudo "$USERNAME"
+    usermod -aG video,render,audio "$USERNAME" 2>/dev/null || true
+else
+    # User exists; update UID/GID if PUID/PGID requested and differs
+    CURRENT_UID=$(id -u "$USERNAME")
+    CURRENT_GID=$(id -g "$USERNAME")
+
+    if [ -n "$PGID" ] && [ "$CURRENT_GID" != "$PGID" ]; then
+        if ! getent group "$PGID" >/dev/null 2>&1; then
+            groupmod -g "$PGID" "$USERNAME" 2>/dev/null || groupadd -g "$PGID" "$USERNAME" 2>/dev/null || true
+        fi
+        usermod -g "$PGID" "$USERNAME" 2>/dev/null || true
+    fi
+
+    if [ -n "$PUID" ] && [ "$CURRENT_UID" != "$PUID" ]; then
+        usermod -u "$PUID" "$USERNAME" 2>/dev/null || true
+    fi
+
     echo "$USERNAME:$PASSWORD" | chpasswd
     usermod -aG sudo "$USERNAME"
     usermod -aG video,render,audio "$USERNAME" 2>/dev/null || true

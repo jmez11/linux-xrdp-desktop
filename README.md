@@ -47,6 +47,8 @@ The image is also published to GHCR: `ghcr.io/jmez11/linux-xrdp-desktop:latest` 
 |---|---|---|
 | `RDP_USER` | `engineer` | Desktop username (created on first start, has sudo) |
 | `RDP_PASS` | `ChangeMe123!` | **Change this.** Login password |
+| `PUID` | *(auto)* | Host User ID (UID) — maps the container user to match your host user permissions on mounted volumes |
+| `PGID` | *(auto)* | Host Group ID (GID) — maps the container user's primary group to match your host group permissions |
 | `TZ` | `UTC` | Timezone |
 | `LIBVA_DRIVER_NAME` | `iHD` | VAAPI driver: `iHD` (Intel), `radeonsi` (AMD), omit for NVIDIA |
 

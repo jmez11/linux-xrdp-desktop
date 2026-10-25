@@ -11,6 +11,9 @@ services:
       - RDP_USER=engineer
       # Change this! (Or set RDP_PASS in your Portainer environment.)
       - RDP_PASS=ChangeMe123!
+      # Map container user to host UID/GID so mounted files match host permissions (e.g. 1000)
+      - PUID=1000
+      - PGID=1000
       - TZ=UTC
       # Set to 'iHD' for Intel, 'radeonsi' for AMD. Omit if using NVIDIA.
       - LIBVA_DRIVER_NAME=iHD
