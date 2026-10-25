@@ -4,6 +4,15 @@ set -e
 USERNAME=${RDP_USER:-desktopuser}
 PASSWORD=${RDP_PASS:-ChangeMe123!}
 
+# Configure system timezone from container environment (e.g. TZ=America/Los_Angeles in compose)
+TZ_VALUE="${TZ:-UTC}"
+if [ -e "/usr/share/zoneinfo/$TZ_VALUE" ]; then
+    ln -snf "/usr/share/zoneinfo/$TZ_VALUE" /etc/localtime
+    echo "$TZ_VALUE" > /etc/timezone
+    sed -i '/^TZ=/d' /etc/environment 2>/dev/null || true
+    echo "TZ=$TZ_VALUE" >> /etc/environment
+fi
+
 # Create isolated local user if missing
 if ! id -u "$USERNAME" >/dev/null 2>&1; then
     useradd -m -s /bin/bash -c "$USERNAME" "$USERNAME"
@@ -79,6 +88,11 @@ export KDE_SESSION_VERSION="5"
 export QT_QPA_PLATFORM="xcb"
 unset GTK_MODULES GTK3_MODULES
 export UBUNTU_MENUPROXY=0
+if [ -f /etc/timezone ]; then
+    export TZ="$(cat /etc/timezone)"
+elif [ -e /etc/localtime ]; then
+    export TZ="$(realpath /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||')"
+fi
 if [ ! -e /dev/dri/renderD128 ]; then
     unset LIBVA_DRIVER_NAME
 fi
@@ -198,6 +212,9 @@ done
 for bin in /usr/libexec/accounts-daemon /usr/lib/accountsservice/accounts-daemon; do
     if [ -x "$bin" ]; then "$bin" >/dev/null 2>&1 & break; fi
 done
+if [ -x /usr/local/bin/xrdp-timedate-daemon.py ]; then
+    /usr/local/bin/xrdp-timedate-daemon.py >/dev/null 2>&1 &
+fi
 sleep 0.5
 dbus-send --system --print-reply --dest=org.freedesktop.Accounts /org/freedesktop/Accounts org.freedesktop.Accounts.CacheUser string:"$USERNAME" >/dev/null 2>&1 || true
 dbus-send --system --print-reply --dest=org.freedesktop.Accounts /org/freedesktop/Accounts org.freedesktop.Accounts.FindUserByName string:"$USERNAME" >/dev/null 2>&1 || true

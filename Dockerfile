@@ -93,6 +93,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     htop \
     neofetch \
     python3 \
+    python3-dbus \
+    python3-gi \
+    tzdata \
     cairo-dock \
     cairo-dock-plug-ins \
     fonts-firacode \
@@ -272,10 +275,12 @@ COPY plasmoids/ /usr/share/plasma/plasmoids/
 COPY xrdp-drives-sync.py /usr/local/bin/xrdp-drives-sync.py
 COPY xrdp-deb-installer.sh /usr/local/bin/xrdp-deb-installer.sh
 COPY xrdp-dock-helper.py /usr/local/bin/xrdp-dock-helper.py
+COPY xrdp-timedate-daemon.py /usr/local/bin/xrdp-timedate-daemon.py
+COPY org.freedesktop.timedate1.conf /etc/dbus-1/system.d/org.freedesktop.timedate1.conf
 COPY vscode-launch /usr/local/bin/vscode-launch
 COPY PicturesSheet.qml /usr/share/kpackage/kcms/kcm_users/contents/ui/PicturesSheet.qml
 COPY UserDetailsPage.qml /usr/share/kpackage/kcms/kcm_users/contents/ui/UserDetailsPage.qml
-RUN chmod +x /usr/local/bin/xrdp-drives-sync.py /usr/local/bin/xrdp-deb-installer.sh /usr/local/bin/xrdp-dock-helper.py /usr/local/bin/vscode-launch \
+RUN chmod +x /usr/local/bin/xrdp-drives-sync.py /usr/local/bin/xrdp-deb-installer.sh /usr/local/bin/xrdp-dock-helper.py /usr/local/bin/xrdp-timedate-daemon.py /usr/local/bin/vscode-launch \
     && ln -sf /usr/local/bin/vscode-launch /usr/local/bin/code \
     && ln -sf /usr/local/bin/vscode-launch /usr/share/code/code \
     && ln -sf /usr/local/bin/vscode-launch /usr/bin/code \
