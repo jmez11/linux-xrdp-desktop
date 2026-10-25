@@ -176,6 +176,30 @@ def remove_app(target):
             save_apps(apps)
     print(json.dumps(apps))
 
+def move_app(from_idx, to_idx):
+    apps = load_apps()
+    try:
+        f = int(from_idx)
+        t = int(to_idx)
+        if 0 <= f < len(apps) and 0 <= t < len(apps):
+            item = apps.pop(f)
+            apps.insert(t, item)
+            save_apps(apps)
+    except Exception:
+        pass
+    print(json.dumps(apps))
+
+def save_custom_apps(json_str):
+    try:
+        data = json.loads(json_str)
+        if isinstance(data, list) and len(data) > 0:
+            save_apps(data)
+            print(json.dumps(data))
+            return
+    except Exception:
+        pass
+    print(json.dumps(load_apps()))
+
 def dump_apps():
     print(json.dumps(load_apps()))
 
@@ -197,6 +221,10 @@ def main():
         add_app(sys.argv[2])
     elif cmd == "remove" and len(sys.argv) >= 3:
         remove_app(sys.argv[2])
+    elif cmd == "move" and len(sys.argv) >= 4:
+        move_app(sys.argv[2], sys.argv[3])
+    elif cmd == "save" and len(sys.argv) >= 3:
+        save_custom_apps(sys.argv[2])
     elif cmd == "list":
         for i, a in enumerate(load_apps()):
             print(f"[{i}] {a.get('name')} ({a.get('cmd')})")

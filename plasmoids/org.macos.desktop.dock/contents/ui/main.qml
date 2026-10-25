@@ -19,6 +19,20 @@ Item {
     property int menuAppIndex: -1
     property var menuAppItem: null
 
+    // Dock icon drag-to-reorder state
+    property int dragItemIndex: -1
+    property int dragOrigIndex: -1
+    property real dragStartX: 0
+    property bool isDraggingDockItem: false
+    property bool hasJustDragged: false
+
+    Timer {
+        id: dragResetTimer
+        interval: 250
+        repeat: false
+        onTriggered: root.hasJustDragged = false
+    }
+
     TaskManager.TasksModel {
         id: tasksModel
         groupMode: TaskManager.TasksModel.GroupApplications
@@ -40,7 +54,7 @@ Item {
         }
     }
 
-    // Helper DataSource for dock configuration (add / remove / dump)
+    // Helper DataSource for dock configuration (add / remove / dump / save / move)
     PlasmaCore.DataSource {
         id: dockHelper
         engine: "executable"
@@ -84,6 +98,39 @@ Item {
         ListElement { name: "System Settings"; appMatch: "systemsettings"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/systemsettings.svg"; cmd: "systemsettings5"; isSeparatorBefore: false }
         ListElement { name: "Shared Drives"; appMatch: "thinclient_drives"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/devices/drive-harddisk.svg"; cmd: "dolphin ~/thinclient_drives"; isSeparatorBefore: true }
         ListElement { name: "Trash"; appMatch: "trash"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/places/user-trash-full.svg"; cmd: "dolphin trash:/"; isSeparatorBefore: false }
+    }
+
+    function isProtectedItem(idx) {
+        if (idx < 0 || idx >= dockModel.count) return true;
+        var it = dockModel.get(idx);
+        return it.appMatch === "trash" || it.appMatch === "thinclient_drives";
+    }
+
+    function itemIndexAtRowPos(rx) {
+        for (var i = 0; i < dockRepeater.count; i++) {
+            var item = dockRepeater.itemAt(i);
+            if (item && rx >= item.x && rx <= item.x + item.width) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    function saveCurrentDockOrder() {
+        var list = [];
+        for (var i = 0; i < dockModel.count; i++) {
+            var it = dockModel.get(i);
+            list.push({
+                name: it.name,
+                appMatch: it.appMatch,
+                iconName: it.iconName,
+                cmd: it.cmd,
+                isSeparatorBefore: it.isSeparatorBefore === true
+            });
+        }
+        var jsonStr = JSON.stringify(list);
+        var quoted = "'" + jsonStr.replace(/'/g, "'\\''") + "'";
+        dockHelper.execCommand("/usr/local/bin/xrdp-dock-helper.py save " + quoted);
     }
 
     function updateDockModel(appsList) {
@@ -219,6 +266,14 @@ Item {
                 property bool launching: false
                 property bool isRunning: root.findTaskIndex(model.appMatch, root.taskRevision) !== -1
 
+                property bool isBeingDragged: root.isDraggingDockItem && root.dragItemIndex === index
+                opacity: isBeingDragged ? 0.75 : 1.0
+                scale: isBeingDragged ? 1.15 : 1.0
+                z: isBeingDragged ? 50 : 1
+
+                Behavior on opacity { NumberAnimation { duration: 120 } }
+                Behavior on scale { NumberAnimation { duration: 120 } }
+
                 onIsRunningChanged: {
                     if (isRunning) {
                         launching = false;
@@ -267,7 +322,7 @@ Item {
                 // Hover tooltip pill above the magnified icon
                 Rectangle {
                     id: tooltipPill
-                    visible: root.mouseInside && delegateRoot.dist < 25 && root.menuAppIndex < 0
+                    visible: root.mouseInside && delegateRoot.dist < 25 && root.menuAppIndex < 0 && !root.isDraggingDockItem
                     anchors.horizontalCenter: iconItem.horizontalCenter
                     anchors.bottom: iconItem.top
                     anchors.bottomMargin: 8
@@ -450,7 +505,7 @@ Item {
         }
     }
 
-    // Drag and Drop Area for adding apps to the dock (macOS style)
+    // Drag and Drop Area for adding apps to the dock from Kickoff/Desktop
     DropArea {
         id: dockDropArea
         anchors.fill: dockBg
@@ -496,10 +551,55 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         z: 20
 
-        onPositionChanged: {
+        onPressed: function(mouse) {
+            if (mouse.button === Qt.LeftButton) {
+                var pt = mapToItem(dockRow, mouse.x, mouse.y);
+                var idx = root.itemIndexAtRowPos(pt.x);
+                if (idx >= 0 && !root.isProtectedItem(idx)) {
+                    root.dragItemIndex = idx;
+                    root.dragOrigIndex = idx;
+                    root.dragStartX = mouse.x;
+                    root.isDraggingDockItem = false;
+                } else {
+                    root.dragItemIndex = -1;
+                    root.dragOrigIndex = -1;
+                }
+            }
+        }
+
+        onPositionChanged: function(mouse) {
             root.mouseInside = true;
             var pt = mapToItem(dockRow, mouse.x, mouse.y);
             root.mouseXPos = pt.x;
+
+            if (root.dragItemIndex >= 0 && (mouse.buttons & Qt.LeftButton)) {
+                if (!root.isDraggingDockItem && Math.abs(mouse.x - root.dragStartX) > 10) {
+                    root.isDraggingDockItem = true;
+                }
+                if (root.isDraggingDockItem) {
+                    var targetIdx = root.itemIndexAtRowPos(pt.x);
+                    if (targetIdx >= 0 && targetIdx !== root.dragItemIndex && !root.isProtectedItem(targetIdx)) {
+                        dockModel.move(root.dragItemIndex, targetIdx, 1);
+                        root.dragItemIndex = targetIdx;
+                    }
+                }
+            }
+        }
+
+        onReleased: function(mouse) {
+            if (root.isDraggingDockItem) {
+                root.isDraggingDockItem = false;
+                root.hasJustDragged = true;
+                dragResetTimer.restart();
+                if (root.dragOrigIndex !== root.dragItemIndex) {
+                    root.saveCurrentDockOrder();
+                }
+                root.dragItemIndex = -1;
+                root.dragOrigIndex = -1;
+                return;
+            }
+            root.dragItemIndex = -1;
+            root.dragOrigIndex = -1;
         }
 
         onExited: {
@@ -508,6 +608,10 @@ Item {
         }
 
         onClicked: function(mouse) {
+            if (root.hasJustDragged) {
+                root.hasJustDragged = false;
+                return;
+            }
             var pt = mapToItem(dockRow, mouse.x, mouse.y);
             for (var i = 0; i < dockRepeater.count; i++) {
                 var item = dockRepeater.itemAt(i);
