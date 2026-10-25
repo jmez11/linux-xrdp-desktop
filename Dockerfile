@@ -92,6 +92,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-desktop-portal-kde \
     xdg-desktop-portal-gtk \
     v4l-utils \
+    gstreamer1.0-tools \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
     gstreamer1.0-pipewire \
     gnupg \
     git \
@@ -235,7 +238,9 @@ RUN sed -i 's/^; exit-idle-time = 20/exit-idle-time = -1/' /etc/pulse/daemon.con
     printf 'wireplumber.profiles = {\n  main = {\n    monitor.alsa = disabled\n  }\n}\n' > /etc/wireplumber/wireplumber.conf.d/90-xrdp-disable-alsa.conf && \
     mkdir -p /etc/firefox/pref /usr/lib/firefox/distribution && \
     printf 'pref("media.webrtc.camera.allow-pipewire", true);\n' > /etc/firefox/pref/xrdp-camera.js && \
-    printf '{\n  "policies": {\n    "Preferences": {\n      "media.webrtc.camera.allow-pipewire": {\n        "Value": true,\n        "Status": "default"\n      }\n    }\n  }\n}\n' > /usr/lib/firefox/distribution/policies.json
+    printf '{\n  "policies": {\n    "Preferences": {\n      "media.webrtc.camera.allow-pipewire": {\n        "Value": true,\n        "Status": "default"\n      }\n    }\n  }\n}\n' > /usr/lib/firefox/distribution/policies.json && \
+    mkdir -p /etc/xdg-desktop-portal && \
+    printf '[preferred]\ndefault=kde;gtk;\n' > /etc/xdg-desktop-portal/portals.conf
 
 # 8. Generate TLS Certificate
 RUN openssl req -x509 -newkey rsa:2048 -nodes \
@@ -292,9 +297,18 @@ COPY xrdp-dock-helper.py /usr/local/bin/xrdp-dock-helper.py
 COPY xrdp-timedate-daemon.py /usr/local/bin/xrdp-timedate-daemon.py
 COPY org.freedesktop.timedate1.conf /etc/dbus-1/system.d/org.freedesktop.timedate1.conf
 COPY vscode-launch /usr/local/bin/vscode-launch
+COPY xrdp-camera-portal-setup.py /usr/local/bin/xrdp-camera-portal-setup.py
+COPY chromium-browser-wrapper /usr/local/bin/chromium-browser-wrapper
 COPY PicturesSheet.qml /usr/share/kpackage/kcms/kcm_users/contents/ui/PicturesSheet.qml
 COPY UserDetailsPage.qml /usr/share/kpackage/kcms/kcm_users/contents/ui/UserDetailsPage.qml
-RUN chmod +x /usr/local/bin/xrdp-drives-sync.py /usr/local/bin/xrdp-deb-installer.sh /usr/local/bin/xrdp-dock-helper.py /usr/local/bin/xrdp-timedate-daemon.py /usr/local/bin/vscode-launch \
+RUN chmod +x /usr/local/bin/xrdp-drives-sync.py /usr/local/bin/xrdp-deb-installer.sh /usr/local/bin/xrdp-dock-helper.py /usr/local/bin/xrdp-timedate-daemon.py /usr/local/bin/vscode-launch /usr/local/bin/xrdp-camera-portal-setup.py /usr/local/bin/chromium-browser-wrapper \
+    && ln -sf /usr/local/bin/chromium-browser-wrapper /usr/local/bin/microsoft-edge \
+    && ln -sf /usr/local/bin/chromium-browser-wrapper /usr/local/bin/microsoft-edge-stable \
+    && ln -sf /usr/local/bin/chromium-browser-wrapper /usr/local/bin/google-chrome \
+    && ln -sf /usr/local/bin/chromium-browser-wrapper /usr/local/bin/google-chrome-stable \
+    && ln -sf /usr/local/bin/chromium-browser-wrapper /usr/local/bin/chromium \
+    && ln -sf /usr/local/bin/chromium-browser-wrapper /usr/local/bin/chromium-browser \
+    && ln -sf /usr/local/bin/chromium-browser-wrapper /usr/local/bin/brave-browser \
     && ln -sf /usr/local/bin/vscode-launch /usr/local/bin/code \
     && ln -sf /usr/local/bin/vscode-launch /usr/share/code/code \
     && ln -sf /usr/local/bin/vscode-launch /usr/bin/code \

@@ -129,12 +129,17 @@ Xft.dpi: 96
 XRES
 
 exec dbus-launch --exit-with-session bash -c '
+    dbus-update-activation-environment --all 2>/dev/null || true
     /usr/bin/pipewire >/dev/null 2>&1 &
     /usr/bin/wireplumber >/dev/null 2>&1 &
     /usr/lib/x86_64-linux-gnu/libexec/polkit-kde-authentication-agent-1 >/dev/null 2>&1 &
     /usr/lib/x86_64-linux-gnu/libexec/xdg-desktop-portal-kde >/dev/null 2>&1 &
     /usr/libexec/xdg-desktop-portal-gtk >/dev/null 2>&1 &
     /usr/libexec/xdg-desktop-portal >/dev/null 2>&1 &
+    /usr/local/bin/xrdp-camera-portal-setup.py >/dev/null 2>&1 &
+    if [ -e /dev/video0 ] && command -v gst-launch-1.0 >/dev/null 2>&1; then
+        ( sleep 2; gst-launch-1.0 pipewiresrc ! videoconvert ! videoscale ! video/x-raw,format=YUY2 ! v4l2sink device=/dev/video0 sync=false >/dev/null 2>&1 & ) || true
+    fi
     /usr/local/bin/xrdp-drives-sync.py >/dev/null 2>&1 &
     exec startplasma-x11
 '

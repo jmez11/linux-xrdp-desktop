@@ -1,0 +1,53 @@
+#!/bin/bash
+# Universal wrapper for Chromium-based browsers (Edge, Chrome, Chromium, Brave)
+# Automatically enables WebRtcPipeWireCamera so redirected webcams work out of the box.
+
+TARGET="$(basename "$0")"
+
+# Search for the real binary outside of /usr/local/bin
+REAL_BIN=""
+CANDIDATES=(
+    "/usr/bin/$TARGET"
+    "/opt/microsoft/msedge/$TARGET"
+    "/opt/google/chrome/$TARGET"
+    "/opt/brave.com/brave/$TARGET"
+)
+
+for path in "${CANDIDATES[@]}"; do
+    if [ -x "$path" ] && [ "$(realpath "$path" 2>/dev/null)" != "$(realpath "$0" 2>/dev/null)" ]; then
+        REAL_BIN="$path"
+        break
+    fi
+done
+
+if [ -z "$REAL_BIN" ]; then
+    # Filter /usr/local/bin out of PATH to find real binary
+    CLEAN_PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '^/usr/local/bin' | paste -sd:)
+    REAL_BIN=$(PATH="$CLEAN_PATH" which "$TARGET" 2>/dev/null || true)
+fi
+
+if [ -z "$REAL_BIN" ] || [ ! -x "$REAL_BIN" ]; then
+    echo "Browser executable '$TARGET' not found." >&2
+    exit 1
+fi
+
+# Inject WebRtcPipeWireCamera into --enable-features if not already present
+case "$*" in
+    *WebRtcPipeWireCamera*)
+        exec "$REAL_BIN" "$@"
+        ;;
+    *--enable-features=*)
+        ARGS=()
+        for arg in "$@"; do
+            if [[ "$arg" =~ ^--enable-features= ]]; then
+                ARGS+=("${arg/--enable-features=/--enable-features=WebRtcPipeWireCamera,}")
+            else
+                ARGS+=("$arg")
+            fi
+        done
+        exec "$REAL_BIN" "${ARGS[@]}"
+        ;;
+    *)
+        exec "$REAL_BIN" --enable-features=WebRtcPipeWireCamera "$@"
+        ;;
+esac
