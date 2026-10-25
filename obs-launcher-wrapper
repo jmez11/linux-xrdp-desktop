@@ -21,7 +21,12 @@ if [ -e /dev/video0 ]; then
     done
 fi
 
-# 2. Locate the real OBS executable
+# 2. Sanitize any broken scenes with empty device_id that cause OBS to segfault on startup
+if [ -d "$HOME/.config/obs-studio/basic/scenes" ]; then
+    sed -i 's|"device_id": ""|"device_id": "/dev/video0"|g' "$HOME/.config/obs-studio/basic/scenes"/*.json 2>/dev/null || true
+fi
+
+# 3. Locate the real OBS executable
 REAL_OBS=""
 if [ -x /usr/bin/obs ]; then
     REAL_OBS="/usr/bin/obs"
