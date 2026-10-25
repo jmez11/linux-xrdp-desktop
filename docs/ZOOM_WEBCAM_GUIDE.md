@@ -76,11 +76,15 @@ services:
 
 *(Or via CLI: `docker run --device /dev/video0:/dev/video0 ...`)*.
 
-### Step 3: Automatic Camera Bridging
+### Step 3: On-Demand Camera Bridging
 
-Inside the container, `entrypoint.sh` automatically launches the dynamic multi-camera bridge daemon (`/usr/local/bin/xrdp-v4l2-bridge.py`) whenever `/dev/video0` is present.
+Inside the container, `entrypoint.sh` runs the on-demand multi-camera bridge daemon (`/usr/local/bin/xrdp-v4l2-bridge.py`) whenever `/dev/video0` is present.
 
-The bridge watches PipeWire for camera sources (`xrdp-camera-0`, `xrdp-camera-1`, etc.) and automatically links each active camera to its corresponding `/dev/videoN` device node in the background.
+**Streaming is strictly on-demand:**
+- When you connect to RDP, your physical webcam **remains OFF** (the camera privacy light does not turn on).
+- The bridge daemon continuously checks if any application (such as Zoom, OBS, VLC) is actively running or has opened `/dev/video*`.
+- When an application accesses the device, the bridge starts streaming over RDP.
+- When the application is closed or stops accessing the camera, the bridge automatically terminates the pipeline after a 3-second grace period, turning your physical webcam back OFF.
 
 ### Step 4: Open Zoom Native
 
@@ -137,12 +141,14 @@ To expose multiple cameras to native V4L2 apps, create multiple loopback devices
      - /dev/video3:/dev/video3
    ```
 
-3. **Automatic Mapping:**
-   The container's `xrdp-v4l2-bridge.py` daemon automatically maps:
+3. **On-Demand Mapping:**
+   The container's `xrdp-v4l2-bridge.py` daemon monitors active requests and maps:
    - Camera 1 (`xrdp-camera-0`) → `/dev/video0` ("XRDP Camera 1")
    - Camera 2 (`xrdp-camera-1`) → `/dev/video1` ("XRDP Camera 2")
    - Camera 3 (`xrdp-camera-2`) → `/dev/video2` ("XRDP Camera 3")
    - Camera 4 (`xrdp-camera-3`) → `/dev/video3` ("XRDP Camera 4")
+
+   Each camera only streams when an application accesses that specific device, preventing unnecessary CPU and bandwidth consumption.
 
 In Zoom Desktop's **Settings → Video**, select between your cameras in the dropdown menu.
 
