@@ -254,6 +254,8 @@ done
 # Ensure all /dev/video* loopback camera devices are accessible to the user
 if ls /dev/video* >/dev/null 2>&1; then
     chmod 666 /dev/video* 2>/dev/null || true
+    mkdir -p /sys/class/video4linux 2>/dev/null || mount -t tmpfs tmpfs /sys/class/video4linux 2>/dev/null || true
+    mkdir -p /tmp/video4linux 2>/dev/null || true
     for vdev in /dev/video*; do
         [ -e "$vdev" ] || continue
         VGID=$(stat -c '%g' "$vdev" 2>/dev/null || true)
@@ -266,7 +268,13 @@ if ls /dev/video* >/dev/null 2>&1; then
                 usermod -aG "$VNAME" "$USERNAME" 2>/dev/null || true
             fi
         fi
+        vname=$(basename "$vdev")
+        vidx=${vname#video}
+        mkdir -p "/sys/class/video4linux/$vname" "/tmp/video4linux/$vname" 2>/dev/null || true
+        echo "XRDP Camera $vidx" > "/sys/class/video4linux/$vname/name" 2>/dev/null || true
+        echo "$vidx" > "/sys/class/video4linux/$vname/index" 2>/dev/null || true
     done
+    chmod -R 777 /tmp/video4linux 2>/dev/null || true
 fi
 
 # Configure VirtualGL headless EGL display

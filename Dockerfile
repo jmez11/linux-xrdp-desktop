@@ -132,6 +132,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #     Installed to distro paths (/usr/sbin, /etc/xrdp) so the config steps below
 #     and the entrypoint keep working unchanged. Build deps are purged in-layer.
 COPY xrdp-rdpecam /tmp/xrdp-rdpecam
+COPY libobs-v4l2-shim.c /tmp/libobs-v4l2-shim.c
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential autoconf automake libtool pkg-config nasm patch \
         libx264-dev libfuse3-dev libjpeg-dev libopus-dev libpam0g-dev libssl-dev \
@@ -161,7 +162,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ldd /usr/sbin/xrdp | grep -q libx264 \
     && ldd /usr/sbin/xrdp-chansrv | grep -q libpipewire \
     && ldd /usr/sbin/xrdp-chansrv | grep -q libopenh264 \
-    && cd / && rm -rf /tmp/xrdp-build /tmp/xrdp-rdpecam \
+    && mkdir -p /usr/local/lib \
+    && gcc -shared -fPIC -O2 /tmp/libobs-v4l2-shim.c -o /usr/local/lib/libobs-v4l2-shim.so -ldl \
+    && cd / && rm -rf /tmp/xrdp-build /tmp/xrdp-rdpecam /tmp/libobs-v4l2-shim.c \
     && apt-get purge -y build-essential autoconf automake libtool pkg-config nasm patch \
         libx264-dev libfuse3-dev libjpeg-dev libopus-dev libpam0g-dev libssl-dev \
         libx11-dev libxfixes-dev libxrandr-dev \

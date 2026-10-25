@@ -326,9 +326,10 @@ def main():
 
                     cmd = [
                         "gst-launch-1.0",
-                        "-v",
+                        "-q",
                     ] + src_args + [
                         "!", "videoconvert",
+                        "!", "videoscale",
                         "!", "video/x-raw,format=YUY2",
                         "!", "v4l2sink", f"device={dev_path}", "sync=false"
                     ]

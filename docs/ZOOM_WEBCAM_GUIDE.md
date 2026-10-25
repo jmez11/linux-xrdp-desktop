@@ -84,7 +84,7 @@ Inside the container, `entrypoint.sh` runs the on-demand multi-camera bridge dae
 - When you connect to RDP, your physical webcam **remains OFF** (the camera privacy light does not turn on).
 - The bridge daemon continuously checks if any application (such as Zoom, OBS, VLC) is actively running or has opened `/dev/video*`.
 - When an application accesses the device, the bridge starts streaming over RDP.
-- When the application is closed or stops accessing the camera, the bridge automatically terminates the pipeline after a 3-second grace period, turning your physical webcam back OFF.
+- When the application is closed or stops accessing the camera, the bridge automatically terminates the pipeline after a 15-second grace period, turning your physical webcam back OFF.
 
 ### Step 4: Open Zoom Native
 
