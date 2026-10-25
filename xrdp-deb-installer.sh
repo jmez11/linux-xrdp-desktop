@@ -71,6 +71,9 @@ LOG_FILE="/tmp/xrdp-deb-install-$$.log"
         sudo -n chown root:root "$sb" 2>/dev/null || true
         sudo -n chmod 4755 "$sb" 2>/dev/null || true
     done
+
+    # Ensure browser launchers and /usr/bin symlinks enable WebRtcPipeWireCamera
+    /usr/local/bin/xrdp-patch-browser-launchers.sh 2>/dev/null || true
 ) >"$LOG_FILE" 2>&1
 RC=$?
 

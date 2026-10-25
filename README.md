@@ -56,7 +56,7 @@ Home directory persists in the `rdp_home` Docker volume. Pass `/dev/dri` through
 
 For the full experience, set these **before connecting** (Show Options):
 
-- **Webcams** — Local Resources → More → Video capture devices → tick your camera(s) (or FreeRDP `/camera:device,format:h264`). Redirected cameras appear as PipeWire `Video/Source` nodes (`wpctl status`) and work out-of-the-box in all major browsers (Firefox, Microsoft Edge, Google Chrome, Chromium, Brave). For standalone meeting apps like Zoom, use the Zoom Web Client (`https://app.zoom.us/wc`) or map a host `v4l2loopback` device (`/dev/video0`) for native client capture.
+- **Webcams** — Local Resources → More → Video capture devices → tick your camera(s) (or FreeRDP `/camera:device,format:h264`). Redirected cameras appear as PipeWire `Video/Source` nodes (`wpctl status`) and work out-of-the-box in all major browsers (Firefox, Microsoft Edge, Google Chrome, Chromium, Brave). For Zoom and standalone V4L2 apps, see [docs/ZOOM_WEBCAM_GUIDE.md](docs/ZOOM_WEBCAM_GUIDE.md).
 - **Drives** — Local Resources → More → Drives → tick your drives (appear at `~/thinclient_drives/`)
 - **Audio playback** — Local Resources → Remote audio → Settings → *Play on this computer*
 - **Microphone** — same dialog → *Record from this computer*
@@ -74,7 +74,7 @@ Drive shares only take effect on a fresh login — if you tick them mid-session,
 
 ## Limitations
 
-- **Standalone V4L2-only camera apps (Zoom native, legacy apps)**: Redirected webcams are published as userspace PipeWire `Video/Source` camera nodes (so the container does not require a host `v4l2loopback` kernel module). All major web browsers (Firefox, Edge, Chrome, Chromium, Brave) and web clients (Zoom Web, Teams Web, Google Meet) connect directly to the PipeWire camera out-of-the-box. Complex native apps like the Zoom Linux desktop client embed CEF/Chromium processes that can deadlock with userspace `pw-v4l2` preloading; to run Zoom desktop natively, load `v4l2loopback` on the Docker host (`sudo modprobe v4l2loopback devices=1 video_nr=0 card_label="XRDP Camera" exclusive_caps=1`) and pass `--device=/dev/video0:/dev/video0` — the container automatically detects `/dev/video0` and relays the PipeWire camera stream into it.
+- **Standalone V4L2-only camera apps (Zoom native, legacy apps)**: Redirected webcams are published as userspace PipeWire `Video/Source` camera nodes (so the container does not require a host `v4l2loopback` kernel module). All major web browsers and web clients connect directly to PipeWire out-of-the-box. For native Zoom desktop capture via `/dev/video0`, see the step-by-step walkthrough in [docs/ZOOM_WEBCAM_GUIDE.md](docs/ZOOM_WEBCAM_GUIDE.md).
 - **RDP only**: no VNC/SSH in this image by design; it's a single-purpose desktop container.
 
 ## License

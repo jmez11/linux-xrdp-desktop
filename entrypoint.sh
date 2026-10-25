@@ -137,6 +137,7 @@ exec dbus-launch --exit-with-session bash -c '
     /usr/libexec/xdg-desktop-portal-gtk >/dev/null 2>&1 &
     /usr/libexec/xdg-desktop-portal >/dev/null 2>&1 &
     /usr/local/bin/xrdp-camera-portal-setup.py >/dev/null 2>&1 &
+    /usr/local/bin/xrdp-patch-browser-launchers.sh >/dev/null 2>&1 &
     if [ -e /dev/video0 ] && command -v gst-launch-1.0 >/dev/null 2>&1; then
         ( sleep 2; gst-launch-1.0 pipewiresrc ! videoconvert ! videoscale ! video/x-raw,format=YUY2 ! v4l2sink device=/dev/video0 sync=false >/dev/null 2>&1 & ) || true
     fi

@@ -4,26 +4,39 @@
 
 TARGET="$(basename "$0")"
 
-# Search for the real binary outside of /usr/local/bin
 REAL_BIN=""
-CANDIDATES=(
-    "/usr/bin/$TARGET"
-    "/opt/microsoft/msedge/$TARGET"
-    "/opt/google/chrome/$TARGET"
-    "/opt/brave.com/brave/$TARGET"
-)
+case "$TARGET" in
+    *edge*)
+        for p in "/opt/microsoft/msedge/microsoft-edge" "/opt/microsoft/msedge/msedge" "/opt/microsoft/msedge-beta/microsoft-edge" "/opt/microsoft/msedge-dev/microsoft-edge"; do
+            [ -x "$p" ] && REAL_BIN="$p" && break
+        done
+        ;;
+    *chrome*)
+        for p in "/opt/google/chrome/google-chrome" "/opt/google/chrome/chrome" "/opt/google/chrome-beta/google-chrome"; do
+            [ -x "$p" ] && REAL_BIN="$p" && break
+        done
+        ;;
+    *brave*)
+        for p in "/opt/brave.com/brave/brave-browser" "/opt/brave.com/brave/brave"; do
+            [ -x "$p" ] && REAL_BIN="$p" && break
+        done
+        ;;
+    *chromium*)
+        for p in "/usr/lib/chromium-browser/chromium-browser" "/usr/lib/chromium/chromium"; do
+            [ -x "$p" ] && REAL_BIN="$p" && break
+        done
+        ;;
+esac
 
-for path in "${CANDIDATES[@]}"; do
-    if [ -x "$path" ] && [ "$(realpath "$path" 2>/dev/null)" != "$(realpath "$0" 2>/dev/null)" ]; then
-        REAL_BIN="$path"
-        break
-    fi
-done
-
+# Fallback search outside /usr/local/bin and /usr/bin if wrapper replaced /usr/bin symlink
 if [ -z "$REAL_BIN" ]; then
-    # Filter /usr/local/bin out of PATH to find real binary
-    CLEAN_PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '^/usr/local/bin' | paste -sd:)
-    REAL_BIN=$(PATH="$CLEAN_PATH" which "$TARGET" 2>/dev/null || true)
+    CLEAN_PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '^/usr/local/bin' | grep -v '^/usr/bin' | paste -sd:)
+    for candidate in $(PATH="$CLEAN_PATH" which -a "$TARGET" 2>/dev/null); do
+        if [ "$(realpath "$candidate" 2>/dev/null)" != "$(realpath "$0" 2>/dev/null)" ]; then
+            REAL_BIN="$candidate"
+            break
+        fi
+    done
 fi
 
 if [ -z "$REAL_BIN" ] || [ ! -x "$REAL_BIN" ]; then
