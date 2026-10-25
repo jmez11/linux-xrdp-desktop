@@ -15,6 +15,12 @@ if [ "$(id -u)" -ne 0 ] && sudo -n true 2>/dev/null; then
 fi
 
 # 1. Overwrite /usr/bin symlinks so any tool or launcher calling /usr/bin directly hits the wrapper
+ZOOM_WRAPPER="/usr/local/bin/zoom-launcher-wrapper"
+if [ -x "$ZOOM_WRAPPER" ] && [ -d /opt/zoom ]; then
+    $SUDO ln -sf "$ZOOM_WRAPPER" /usr/local/bin/zoom 2>/dev/null || true
+    $SUDO ln -sf "$ZOOM_WRAPPER" /usr/bin/zoom 2>/dev/null || true
+fi
+
 for bin in microsoft-edge microsoft-edge-stable google-chrome google-chrome-stable brave-browser chromium chromium-browser; do
     REAL_EXISTS=0
     case "$bin" in
@@ -38,6 +44,12 @@ DESKTOP_DIRS=(
 
 for dir in "${DESKTOP_DIRS[@]}"; do
     [ -d "$dir" ] || continue
+    for d in "$dir"/Zoom.desktop "$dir"/zoom.desktop; do
+        [ -f "$d" ] || continue
+        if [ -x "$ZOOM_WRAPPER" ]; then
+            $SUDO sed -i 's|^Exec=.*|Exec=/usr/local/bin/zoom %U|' "$d" 2>/dev/null || true
+        fi
+    done
     for d in "$dir"/microsoft-edge*.desktop "$dir"/google-chrome*.desktop "$dir"/chromium*.desktop "$dir"/brave*.desktop; do
         [ -f "$d" ] || continue
         if ! grep -q "WebRtcPipeWireCamera" "$d"; then

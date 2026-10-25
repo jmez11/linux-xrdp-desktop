@@ -251,6 +251,24 @@ for render_node in /dev/dri/renderD*; do
     fi
 done
 
+# Ensure all /dev/video* loopback camera devices are accessible to the user
+if ls /dev/video* >/dev/null 2>&1; then
+    chmod 666 /dev/video* 2>/dev/null || true
+    for vdev in /dev/video*; do
+        [ -e "$vdev" ] || continue
+        VGID=$(stat -c '%g' "$vdev" 2>/dev/null || true)
+        if [ -n "$VGID" ] && [ "$VGID" != "0" ]; then
+            if ! getent group "$VGID" >/dev/null 2>&1; then
+                groupadd -g "$VGID" "host-video-$VGID" 2>/dev/null || true
+            fi
+            VNAME=$(getent group "$VGID" | cut -d: -f1 || true)
+            if [ -n "$VNAME" ]; then
+                usermod -aG "$VNAME" "$USERNAME" 2>/dev/null || true
+            fi
+        fi
+    done
+fi
+
 # Configure VirtualGL headless EGL display
 /opt/VirtualGL/bin/vglserver_config -config +s +f +t 2>/dev/null || true
 cat << 'EOF' > /etc/profile.d/virtualgl.sh

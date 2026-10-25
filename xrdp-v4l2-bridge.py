@@ -20,9 +20,21 @@ import subprocess
 import sys
 import time
 
+LOG_FILE = "/tmp/xrdp-v4l2-bridge.log"
+WAKE_FILE = "/tmp/.xrdp-camera-wake"
+
+def log(msg):
+    try:
+        t = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(LOG_FILE, "a") as f:
+            f.write(f"[{t}] {msg}\n")
+    except Exception:
+        pass
+
 # Apps that use V4L2 video devices when active
 V4L2_APP_NAMES = {
     "zoom",
+    "zoomlauncher",
     "zoom-client",
     "us.zoom.zoom",
     "obs",
@@ -44,16 +56,15 @@ V4L2_APP_NAMES = {
 BRIDGE_MODE = os.environ.get("XRDP_V4L2_MODE", "auto").strip().lower()
 
 # Grace period in seconds to keep pipeline alive after an app closes /dev/videoN
-# Prevents camera flapping during brief format renegotiation or setting changes.
 IDLE_GRACE_PERIOD = 3.0
 
-# State tracking:
-# active_relays[cam_name] = {
-#     "proc": subprocess.Popen,
-#     "dev": str,
-#     "last_needed": float,
-# }
 active_relays = {}
+wake_requested = False
+
+
+def handle_sigusr1(signum, frame):
+    global wake_requested
+    wake_requested = True
 
 
 def get_pipewire_cameras():
@@ -79,6 +90,9 @@ def get_pipewire_cameras():
 
 def is_v4l2_app_running():
     """Checks if any known standalone V4L2 video app is currently running in the session."""
+    if os.path.exists(WAKE_FILE):
+        return True
+
     try:
         pids = [p for p in os.listdir("/proc") if p.isdigit()]
     except OSError:
@@ -116,7 +130,6 @@ def is_device_in_use_by_client(dev_path, our_pids):
         if pid in our_pids or pid == os.getpid():
             continue
 
-        # Check process name to skip helper / streamer processes
         try:
             with open(f"/proc/{pid_str}/comm", "r") as f:
                 comm = f.read().strip()
@@ -152,7 +165,9 @@ def is_device_in_use_by_client(dev_path, our_pids):
 
 def stop_pipeline(relay):
     proc = relay.get("proc")
+    cam_name = relay.get("cam_name", "unknown")
     if proc:
+        log(f"Stopping pipeline for {cam_name} -> {relay.get('dev')}")
         try:
             proc.terminate()
             proc.wait(timeout=1.5)
@@ -165,13 +180,33 @@ def stop_pipeline(relay):
 
 
 def main():
+    global wake_requested
+
+    # Support CLI trigger flag
+    if "--wake" in sys.argv or "--activate" in sys.argv:
+        try:
+            open(WAKE_FILE, "a").close()
+        except Exception:
+            pass
+        subprocess.run(["pkill", "-USR1", "-f", "xrdp-v4l2-bridge.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        sys.exit(0)
+
+    try:
+        signal.signal(signal.SIGUSR1, handle_sigusr1)
+    except Exception:
+        pass
+
+    log(f"xrdp-v4l2-bridge started (PID {os.getpid()}, MODE={BRIDGE_MODE})")
+
     while True:
         try:
             now = time.time()
+            wake_requested = False
+
             cameras = get_pipewire_cameras()
             current_cam_names = [c["name"] for c in cameras]
 
-            # Collect PIDs of our running gst-launch processes
+            # Collect PIDs of running gst-launch processes
             our_pids = set()
             for relay in active_relays.values():
                 proc = relay.get("proc")
@@ -195,6 +230,7 @@ def main():
                 relay = active_relays.setdefault(cam_name, {
                     "proc": None,
                     "dev": dev_path,
+                    "cam_name": cam_name,
                     "last_needed": 0.0,
                 })
 
@@ -205,7 +241,6 @@ def main():
                 elif BRIDGE_MODE == "clients_only":
                     is_needed = is_device_in_use_by_client(dev_path, our_pids)
                 else:  # "auto"
-                    # Needed if a client has opened the device, or if a V4L2 app (e.g. Zoom) is running
                     is_needed = is_device_in_use_by_client(dev_path, our_pids) or v4l2_app_active
 
                 if is_needed:
@@ -221,7 +256,13 @@ def main():
                 should_run = (now - relay["last_needed"] < IDLE_GRACE_PERIOD)
 
                 if should_run and proc is None:
-                    # Launch GStreamer pipeline on demand
+                    log(f"Launching pipeline: {cam_name} -> {dev_path}")
+                    err_log = None
+                    try:
+                        err_log = open(f"/tmp/gst-launch-video{idx}.log", "w")
+                    except Exception:
+                        err_log = subprocess.DEVNULL
+
                     cmd = [
                         "gst-launch-1.0",
                         "-q",
@@ -231,17 +272,29 @@ def main():
                         "!", "video/x-raw,format=YUY2",
                         "!", "v4l2sink", f"device={dev_path}", "sync=false"
                     ]
-                    p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=err_log)
                     relay["proc"] = p
                     our_pids.add(p.pid)
+                    log(f"Pipeline started with PID {p.pid}")
                 elif not should_run and proc is not None:
-                    # Shut down pipeline when no longer needed
                     stop_pipeline(relay)
 
-        except Exception:
-            pass
+            # Consume the wake file if all cameras are launched
+            if os.path.exists(WAKE_FILE):
+                try:
+                    os.remove(WAKE_FILE)
+                except Exception:
+                    pass
 
-        time.sleep(1.0)
+        except Exception as e:
+            log(f"Error in main loop: {e}")
+
+        # Sleep up to 1 second, but wake immediately if SIGUSR1 arrives
+        sleep_end = time.time() + 1.0
+        while time.time() < sleep_end:
+            if wake_requested or os.path.exists(WAKE_FILE):
+                break
+            time.sleep(0.1)
 
 
 if __name__ == "__main__":

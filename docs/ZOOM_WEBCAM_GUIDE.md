@@ -92,8 +92,10 @@ Launch the native Zoom application from the desktop launcher, dock, or terminal:
 ```bash
 zoom
 ```
+The built-in `zoom` launcher wrapper pre-activates the camera pipeline so Zoom's initial device scan immediately detects your camera.
+
 1. Open **Settings** (gear icon) → **Video**.
-2. Under the **Camera** dropdown, select **"XRDP Camera"** (or `/dev/video0`).
+2. Under the **Camera** dropdown, select **"XRDP Camera 1"** (or `/dev/video0`).
 3. Your live redirected video stream will display directly in Zoom.
 
 ---
