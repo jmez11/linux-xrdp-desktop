@@ -65,6 +65,12 @@ LOG_FILE="/tmp/xrdp-deb-install-$$.log"
 
     # Ensure KDE desktop database is refreshed after installing new .desktop files
     update-desktop-database /usr/share/applications 2>/dev/null || true
+
+    # Fix SUID permissions on newly installed Electron/Chromium sandboxes
+    find /opt /usr/lib /usr/share -name "chrome-sandbox" -o -name "msedge-sandbox" 2>/dev/null | while read -r sb; do
+        sudo -n chown root:root "$sb" 2>/dev/null || true
+        sudo -n chmod 4755 "$sb" 2>/dev/null || true
+    done
 ) >"$LOG_FILE" 2>&1
 RC=$?
 

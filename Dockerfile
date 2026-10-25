@@ -63,6 +63,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     mesa-va-drivers \
     mesa-vulkan-drivers \
+    intel-media-va-driver \
+    intel-opencl-icd \
+    libze1 \
+    libze-intel-gpu1 \
+    clinfo \
     mesa-utils \
     vainfo \
     vulkan-tools \
@@ -108,8 +113,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     inkscape \
     vlc \
     libreoffice \
-    blender \
     glmark2-x11 \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # 1b. Build xrdp 0.10.3 + xorgxrdp 0.10.3 from source with x264 H.264 encoding
@@ -269,7 +274,17 @@ RUN mkdir -p /usr/share/icons /usr/share/aurorae/themes /usr/share/plasma/plasmo
     && printf 'polkit.addRule(function(action, subject) {\n    if (subject.isInGroup("sudo")) {\n        return polkit.Result.YES;\n    }\n});\n' > /etc/polkit-1/rules.d/49-nopasswd-sudo.rules \
     && printf '[Allow all polkit actions for sudo group]\nIdentity=unix-group:sudo\nAction=*\nResultAny=yes\nResultInactive=yes\nResultActive=yes\n' > /var/lib/polkit-1/localauthority/50-local.d/49-nopasswd-sudo.pkla \
     && rm -f /etc/X11/Xsession.d/*appmenu* 2>/dev/null || true \
-    && echo "UBUNTU_MENUPROXY=0" >> /etc/environment
+    && echo "UBUNTU_MENUPROXY=0" >> /etc/environment \
+    && echo "CYCLES_ONEAPI_ALL_DEVICES=1" >> /etc/environment
+
+# 4b. Install official Blender 4.2 LTS Foundation build (includes Intel oneAPI / SYCL Cycles GPU support)
+RUN mkdir -p /opt/blender \
+    && (curl -fsSL https://mirror.clarkson.edu/blender/release/Blender4.2/blender-4.2.3-linux-x64.tar.xz || curl -fsSL https://ftp.nluug.nl/graphics/blender/release/Blender4.2/blender-4.2.3-linux-x64.tar.xz) | tar -xJ -C /opt/blender --strip-components=1 \
+    && ln -sf /opt/blender/blender /usr/local/bin/blender \
+    && cp /opt/blender/blender.desktop /usr/share/applications/blender.desktop \
+    && cp /opt/blender/blender.svg /usr/share/icons/hicolor/scalable/apps/blender.svg 2>/dev/null || true \
+    && cp /opt/blender/blender.svg /usr/share/pixmaps/blender.svg 2>/dev/null || true \
+    && update-desktop-database /usr/share/applications 2>/dev/null || true
 
 COPY plasmoids/ /usr/share/plasma/plasmoids/
 COPY xrdp-drives-sync.py /usr/local/bin/xrdp-drives-sync.py

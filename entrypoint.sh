@@ -13,6 +13,9 @@ if [ -e "/usr/share/zoneinfo/$TZ_VALUE" ]; then
     echo "TZ=$TZ_VALUE" >> /etc/environment
 fi
 
+sed -i '/^CYCLES_ONEAPI_ALL_DEVICES=/d' /etc/environment 2>/dev/null || true
+echo "CYCLES_ONEAPI_ALL_DEVICES=1" >> /etc/environment
+
 # Create isolated local user if missing
 if ! id -u "$USERNAME" >/dev/null 2>&1; then
     useradd -m -s /bin/bash -c "$USERNAME" "$USERNAME"
@@ -40,6 +43,12 @@ mkdir -p "/home/$USERNAME/Desktop" "/home/$USERNAME/Downloads" "/home/$USERNAME/
 rm -f "/home/$USERNAME/.config/microsoft-edge/Singleton"* \
       "/home/$USERNAME/.config/google-chrome/Singleton"* \
       "/home/$USERNAME/.config/chromium/Singleton"* 2>/dev/null || true
+
+# Ensure any Electron / Chromium sandboxes have SUID root permissions
+find /opt /usr/lib /usr/share -name "chrome-sandbox" -o -name "msedge-sandbox" 2>/dev/null | while read -r sb; do
+    chown root:root "$sb" 2>/dev/null || true
+    chmod 4755 "$sb" 2>/dev/null || true
+done
 
 # Guarantee XDG user dirs explicitly point Desktop to ~/Desktop from the very first session start
 cat << 'EOF' > "/home/$USERNAME/.config/user-dirs.dirs"
@@ -88,6 +97,7 @@ export KDE_SESSION_VERSION="5"
 export QT_QPA_PLATFORM="xcb"
 unset GTK_MODULES GTK3_MODULES
 export UBUNTU_MENUPROXY=0
+export CYCLES_ONEAPI_ALL_DEVICES=1
 if [ -f /etc/timezone ]; then
     export TZ="$(cat /etc/timezone)"
 elif [ -e /etc/localtime ]; then
@@ -154,15 +164,17 @@ EOF
 rm -f "/home/$USERNAME/.config/autostart/plank.desktop"
 chown -R "$USERNAME:$USERNAME" "/home/$USERNAME/.config/autostart"
 
-# Dynamically map host DRI render node GID to avoid permission errors
-if [ -e /dev/dri/renderD128 ]; then
-    RENDER_GID=$(stat -c '%g' /dev/dri/renderD128)
-    if ! getent group "$RENDER_GID" >/dev/null; then
-        groupadd -g "$RENDER_GID" host-render 2>/dev/null || true
+# Dynamically map host DRI render node GIDs to avoid permission errors
+for render_node in /dev/dri/renderD*; do
+    if [ -e "$render_node" ]; then
+        RENDER_GID=$(stat -c '%g' "$render_node")
+        if ! getent group "$RENDER_GID" >/dev/null; then
+            groupadd -g "$RENDER_GID" "host-render-$RENDER_GID" 2>/dev/null || true
+        fi
+        RENDER_GROUP_NAME=$(getent group "$RENDER_GID" | cut -d: -f1)
+        usermod -aG "$RENDER_GROUP_NAME" "$USERNAME" 2>/dev/null || true
     fi
-    RENDER_GROUP_NAME=$(getent group "$RENDER_GID" | cut -d: -f1)
-    usermod -aG "$RENDER_GROUP_NAME" "$USERNAME" 2>/dev/null || true
-fi
+done
 
 # Configure VirtualGL headless EGL display
 /opt/VirtualGL/bin/vglserver_config -config +s +f +t 2>/dev/null || true
