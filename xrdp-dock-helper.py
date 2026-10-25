@@ -24,6 +24,7 @@ DEFAULT_APPS = [
     {"name": "GIMP", "appMatch": "gimp", "iconName": "/usr/share/icons/Mkos-Big-Sur/128x128/apps/gimp.svg", "cmd": "gimp", "isSeparatorBefore": False},
     {"name": "Inkscape", "appMatch": "inkscape", "iconName": "/usr/share/icons/Mkos-Big-Sur/128x128/apps/inkscape.svg", "cmd": "inkscape", "isSeparatorBefore": False},
     {"name": "Blender", "appMatch": "blender", "iconName": "/usr/share/icons/Mkos-Big-Sur/128x128/apps/blender.svg", "cmd": "blender", "isSeparatorBefore": False},
+    {"name": "OBS Studio", "appMatch": "obs", "iconName": "/usr/share/icons/Mkos-Big-Sur/128x128/apps/obs.svg", "cmd": "obs", "isSeparatorBefore": False},
     {"name": "VLC", "appMatch": "vlc", "iconName": "/usr/share/icons/Mkos-Big-Sur/128x128/apps/vlc.svg", "cmd": "vlc", "isSeparatorBefore": False},
     {"name": "LibreOffice Writer", "appMatch": "writer", "iconName": "/usr/share/icons/Mkos-Big-Sur/128x128/apps/libreoffice-writer.svg", "cmd": "libreoffice --writer", "isSeparatorBefore": False},
     {"name": "LibreOffice Calc", "appMatch": "calc", "iconName": "/usr/share/icons/Mkos-Big-Sur/128x128/apps/libreoffice-calc.svg", "cmd": "libreoffice --calc", "isSeparatorBefore": False},

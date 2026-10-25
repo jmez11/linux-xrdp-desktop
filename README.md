@@ -9,7 +9,7 @@ A full Ubuntu 24.04 **KDE Plasma** desktop in a Docker container, styled to look
 - **Ubuntu 24.04 + KDE Plasma (macOS layout & styling)** — Configured out-of-the-box with the [How-To Geek KDE Plasma macOS transformation](https://www.howtogeek.com/heres-how-i-made-linux-feel-more-like-macos-using-kde-plasma/):
   - **Top Menu Bar** — Translucent top bar with User Switcher (profile icon), bold active Window Title (`%a`), Global Application Menu, System Tray, Control Hub / Control Centre, and Digital Clock (`ddd MMM d` beside time)
   - **Top-Left Desktop Widgets & Top-Right System Drive** — Rounded Calendar, Analog Clock, and IP-geolocated live Weather widgets at the top-left, plus a **System Drive** icon automatically arranged at the top-right
-  - **Bottom Animated Dock** — Centered floating dock (`Fill Content` width, `Dodge Windows` visibility, 58px height) with smooth hover-zoom animation, native Dolphin icon, and `Mkos-Big-Sur` icons for preinstalled apps (Dolphin, Firefox, VS Code, Konsole, Kate, Gwenview, Okular, GIMP, Inkscape, Blender, VLC, LibreOffice Writer/Calc, Calculator, System Settings) + Disks & Devices + Trash
+  - **Bottom Animated Dock** — Centered floating dock (`Fill Content` width, `Dodge Windows` visibility, 58px height) with smooth hover-zoom animation, native Dolphin icon, and `Mkos-Big-Sur` icons for preinstalled apps (Dolphin, Firefox, VS Code, Konsole, Kate, Gwenview, Okular, GIMP, Inkscape, Blender, OBS Studio, VLC, LibreOffice Writer/Calc, Calculator, System Settings) + Disks & Devices + Trash
   - **One-click `.deb` package installation** — Double-clicking any downloaded `.deb` file automatically refreshes APT package lists, resolves dependencies, installs the package, and notifies you on completion
   - **Smooth subpixel font rendering** — Configured with `Inter` + `Fira Code` fonts, RGB subpixel anti-aliasing, slight hinting (`hintslight`), and `lcddefault` filter across Qt, GTK, and X11
   - **Mkos-Big-Sur icons & Summaculate traffic-light window controls** — macOS Big Sur icon pack (preserving native Dolphin icon) with Close/Minimize/Maximize traffic-light buttons positioned on the **top-left** (`ButtonsOnLeft=XIA`)
@@ -20,7 +20,7 @@ A full Ubuntu 24.04 **KDE Plasma** desktop in a Docker container, styled to look
 - **Drive redirection (Windows-style Dolphin sidebar shortcuts)** — share client drives and they appear at `~/thinclient_drives/` via FUSE and automatically populate in Dolphin's left **Places** sidebar as `<Drive> on <ClientName>` (e.g. `C on NUCBOX`, `Y on NUCBOX`) when shared, or stay cleanly hidden when no storage is shared
 - **Clipboard** redirection
 - **VirtualGL** — GPU-accelerated OpenGL for headless servers (`vglrun glmark2` to test)
-- **Preinstalled apps** — Dolphin, Konsole, Kate, Gwenview, Okular, Spectacle, KRunner (`Alt+Space`), Firefox, VS Code, GIMP, Inkscape, VLC, LibreOffice, Blender, htop, neofetch, git
+- **Preinstalled apps** — Dolphin, Konsole, Kate, Gwenview, Okular, Spectacle, KRunner (`Alt+Space`), Firefox, VS Code, GIMP, Inkscape, Blender, OBS Studio, VLC, LibreOffice, htop, neofetch, git
 
 ## Quick start
 

@@ -116,6 +116,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gimp \
     inkscape \
     vlc \
+    obs-studio \
     libreoffice \
     glmark2-x11 \
     xz-utils \
@@ -260,6 +261,7 @@ RUN mkdir -p /usr/share/icons /usr/share/aurorae/themes /usr/share/plasma/plasmo
     && git clone --depth 1 https://github.com/zayronxio/Mkos-Big-Sur.git /usr/share/icons/Mkos-Big-Sur \
     && rm -rf /usr/share/icons/Mkos-Big-Sur/.git /usr/share/icons/Mkos-Big-Sur/preview-icons-apps \
     && rm -f /usr/share/icons/Mkos-Big-Sur/*/apps/*dolphin*.svg /usr/share/icons/Mkos-Big-Sur/*/apps/*file-manager*.svg /usr/share/icons/Mkos-Big-Sur/*/apps/Filemanager.svg \
+    && (cp /usr/share/icons/hicolor/scalable/apps/com.obsproject.Studio.svg /usr/share/icons/Mkos-Big-Sur/128x128/apps/obs.svg 2>/dev/null || cp /usr/share/icons/hicolor/256x256/apps/com.obsproject.Studio.png /usr/share/icons/Mkos-Big-Sur/128x128/apps/obs.png 2>/dev/null || true) \
     && gtk-update-icon-cache -f /usr/share/icons/Mkos-Big-Sur 2>/dev/null || true \
     && git clone --depth 1 https://github.com/doncsugar/sumac-theme.git /tmp/sumac-theme \
     && cp -r /tmp/sumac-theme/aurorae/summaculate/* /usr/share/aurorae/themes/ \

@@ -91,6 +91,7 @@ Item {
         ListElement { name: "GIMP"; appMatch: "gimp"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/gimp.svg"; cmd: "gimp"; isSeparatorBefore: false }
         ListElement { name: "Inkscape"; appMatch: "inkscape"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/inkscape.svg"; cmd: "inkscape"; isSeparatorBefore: false }
         ListElement { name: "Blender"; appMatch: "blender"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/blender.svg"; cmd: "blender"; isSeparatorBefore: false }
+        ListElement { name: "OBS Studio"; appMatch: "obs"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/obs.svg"; cmd: "obs"; isSeparatorBefore: false }
         ListElement { name: "VLC"; appMatch: "vlc"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/vlc.svg"; cmd: "vlc"; isSeparatorBefore: false }
         ListElement { name: "LibreOffice Writer"; appMatch: "writer"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/libreoffice-writer.svg"; cmd: "libreoffice --writer"; isSeparatorBefore: false }
         ListElement { name: "LibreOffice Calc"; appMatch: "calc"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/libreoffice-calc.svg"; cmd: "libreoffice --calc"; isSeparatorBefore: false }
