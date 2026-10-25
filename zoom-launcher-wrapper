@@ -11,8 +11,14 @@ if [ -e /dev/video0 ]; then
         touch /tmp/.xrdp-camera-wake 2>/dev/null || true
         pkill -USR1 -f xrdp-v4l2-bridge.py 2>/dev/null || true
     fi
-    # Wait for GStreamer pipeline to connect to PipeWire and feed frames to /dev/video*
-    sleep 0.6
+
+    # Wait up to 1.5 seconds for /dev/video0 to enter Video Capture mode with active frames
+    for i in $(seq 1 15); do
+        if v4l2-ctl -d /dev/video0 --all 2>/dev/null | grep -qi "Video Capture"; then
+            break
+        fi
+        sleep 0.1
+    done
 fi
 
 # 2. Locate the real Zoom executable

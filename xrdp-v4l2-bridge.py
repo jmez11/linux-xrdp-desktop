@@ -23,6 +23,7 @@ import time
 LOG_FILE = "/tmp/xrdp-v4l2-bridge.log"
 WAKE_FILE = "/tmp/.xrdp-camera-wake"
 
+
 def log(msg):
     try:
         t = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -30,6 +31,7 @@ def log(msg):
             f.write(f"[{t}] {msg}\n")
     except Exception:
         pass
+
 
 # Apps that use V4L2 video devices when active
 V4L2_APP_NAMES = {
@@ -49,15 +51,18 @@ V4L2_APP_NAMES = {
     "skypeforlinux",
 }
 
-# Mode from environment:
-# "auto" (default): starts when a client opens /dev/videoN OR when a V4L2 app (e.g. Zoom) is running
-# "clients_only": ONLY starts when an active client process has opened /dev/videoN
-# "always": starts immediately whenever camera and /dev/videoN exist (legacy behavior)
 BRIDGE_MODE = os.environ.get("XRDP_V4L2_MODE", "auto").strip().lower()
-
-# Grace period in seconds to keep pipeline alive after an app closes /dev/videoN
 IDLE_GRACE_PERIOD = 3.0
 
+# active_relays[dev_path] = {
+#     "proc": subprocess.Popen,
+#     "dev": str,
+#     "cam_id": int,
+#     "cam_serial": int,
+#     "cam_name": str,
+#     "last_needed": float,
+#     "last_failure": float,
+# }
 active_relays = {}
 wake_requested = False
 
@@ -68,10 +73,12 @@ def handle_sigusr1(signum, frame):
 
 
 def get_pipewire_cameras():
+    """Queries pw-dump and returns only active xrdp-rdpecam camera nodes."""
     try:
         out = subprocess.check_output(["pw-dump"], timeout=3)
         data = json.loads(out)
-    except Exception:
+    except Exception as e:
+        log(f"pw-dump failed: {e}")
         return []
 
     cameras = []
@@ -80,11 +87,23 @@ def get_pipewire_cameras():
             continue
         props = obj.get("info", {}).get("props", {})
         if props.get("media.class") == "Video/Source":
-            name = props.get("node.name")
+            name = props.get("node.name", "")
+            # Only match client cameras published by xrdp-rdpecam
+            if not name.startswith("xrdp-camera-"):
+                continue
+
+            node_id = obj.get("id")
+            serial = props.get("object.serial") or props.get("object.id") or node_id
             desc = props.get("node.description", name)
-            if name:
-                cameras.append({"name": name, "desc": desc})
-    cameras.sort(key=lambda c: c["name"])
+            cameras.append({
+                "id": node_id,
+                "serial": serial,
+                "name": name,
+                "desc": desc,
+            })
+
+    # Sort deterministically by numeric node id
+    cameras.sort(key=lambda c: int(c["id"]) if isinstance(c["id"], (int, str)) and str(c["id"]).isdigit() else 0)
     return cameras
 
 
@@ -165,9 +184,10 @@ def is_device_in_use_by_client(dev_path, our_pids):
 
 def stop_pipeline(relay):
     proc = relay.get("proc")
+    dev = relay.get("dev", "unknown")
     cam_name = relay.get("cam_name", "unknown")
     if proc:
-        log(f"Stopping pipeline for {cam_name} -> {relay.get('dev')}")
+        log(f"Stopping pipeline for {cam_name} -> {dev} (PID {proc.pid})")
         try:
             proc.terminate()
             proc.wait(timeout=1.5)
@@ -182,7 +202,6 @@ def stop_pipeline(relay):
 def main():
     global wake_requested
 
-    # Support CLI trigger flag
     if "--wake" in sys.argv or "--activate" in sys.argv:
         try:
             open(WAKE_FILE, "a").close()
@@ -204,7 +223,7 @@ def main():
             wake_requested = False
 
             cameras = get_pipewire_cameras()
-            current_cam_names = [c["name"] for c in cameras]
+            num_cams = len(cameras)
 
             # Collect PIDs of running gst-launch processes
             our_pids = set()
@@ -215,26 +234,47 @@ def main():
 
             v4l2_app_active = is_v4l2_app_running() if BRIDGE_MODE == "auto" else False
 
-            # Clean up disconnected cameras
-            for name in list(active_relays.keys()):
-                if name not in current_cam_names:
-                    stop_pipeline(active_relays.pop(name))
+            # Stop pipelines on video devices that no longer have a matching camera
+            active_dev_paths = [f"/dev/video{idx}" for idx in range(num_cams)]
+            for dev_path in list(active_relays.keys()):
+                if dev_path not in active_dev_paths:
+                    stop_pipeline(active_relays.pop(dev_path))
 
-            # Evaluate each available camera and matching /dev/videoN node
+            # Evaluate each active camera and its corresponding /dev/videoN node
             for idx, cam in enumerate(cameras):
                 dev_path = f"/dev/video{idx}"
                 if not os.path.exists(dev_path):
                     continue
 
+                # Ensure non-root read/write permissions
+                try:
+                    os.chmod(dev_path, 0o666)
+                except Exception:
+                    pass
+
                 cam_name = cam["name"]
-                relay = active_relays.setdefault(cam_name, {
+                cam_id = cam["id"]
+                cam_serial = cam["serial"]
+
+                relay = active_relays.setdefault(dev_path, {
                     "proc": None,
                     "dev": dev_path,
+                    "cam_id": cam_id,
+                    "cam_serial": cam_serial,
                     "cam_name": cam_name,
                     "last_needed": 0.0,
+                    "last_failure": 0.0,
                 })
 
-                # Check if camera is currently needed by an app
+                # If the camera assigned to this device changed, restart pipeline
+                if relay.get("cam_id") != cam_id or relay.get("cam_name") != cam_name:
+                    log(f"Camera reassigned on {dev_path}: {relay.get('cam_name')} -> {cam_name}")
+                    stop_pipeline(relay)
+                    relay["cam_id"] = cam_id
+                    relay["cam_serial"] = cam_serial
+                    relay["cam_name"] = cam_name
+
+                # Determine if camera is needed
                 is_needed = False
                 if BRIDGE_MODE == "always":
                     is_needed = True
@@ -249,24 +289,33 @@ def main():
                 # Verify current process state
                 proc = relay.get("proc")
                 if proc and proc.poll() is not None:
-                    proc = None
+                    exit_code = proc.poll()
                     relay["proc"] = None
+                    relay["last_failure"] = now
+                    log(f"Pipeline for {cam_name} -> {dev_path} exited with code {exit_code}")
 
-                # Determine if pipeline should be active
+                # Determine if pipeline should run
                 should_run = (now - relay["last_needed"] < IDLE_GRACE_PERIOD)
 
-                if should_run and proc is None:
-                    log(f"Launching pipeline: {cam_name} -> {dev_path}")
+                # Avoid tight crash-relaunch loops if pipeline fails
+                backoff_ok = (now - relay.get("last_failure", 0.0) >= 2.0)
+
+                if should_run and proc is None and backoff_ok:
+                    log(f"Launching pipeline: {cam_name} (id={cam_id}, serial={cam_serial}) -> {dev_path}")
                     err_log = None
                     try:
                         err_log = open(f"/tmp/gst-launch-video{idx}.log", "w")
                     except Exception:
                         err_log = subprocess.DEVNULL
 
-                    cmd = [
-                        "gst-launch-1.0",
-                        "-q",
-                        "pipewiresrc", f"target-object={cam_name}",
+                    # For single camera: standard pipewiresrc connects to default Video/Source without name lookup issues.
+                    # For multiple cameras: explicitly target the numeric object serial/path.
+                    if num_cams == 1:
+                        src_args = ["pipewiresrc"]
+                    else:
+                        src_args = ["pipewiresrc", f"path={cam_id}", f"target-object={cam_serial}"]
+
+                    cmd = src_args + [
                         "!", "videoconvert",
                         "!", "videoscale",
                         "!", "video/x-raw,format=YUY2",
@@ -279,7 +328,7 @@ def main():
                 elif not should_run and proc is not None:
                     stop_pipeline(relay)
 
-            # Consume the wake file if all cameras are launched
+            # Consume the wake flag once all pipelines are launched
             if os.path.exists(WAKE_FILE):
                 try:
                     os.remove(WAKE_FILE)
@@ -289,7 +338,7 @@ def main():
         except Exception as e:
             log(f"Error in main loop: {e}")
 
-        # Sleep up to 1 second, but wake immediately if SIGUSR1 arrives
+        # Sleep up to 1 second, but wake immediately if SIGUSR1 arrives or wake file created
         sleep_end = time.time() + 1.0
         while time.time() < sleep_end:
             if wake_requested or os.path.exists(WAKE_FILE):

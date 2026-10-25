@@ -92,6 +92,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-desktop-portal-kde \
     xdg-desktop-portal-gtk \
     v4l-utils \
+    psmisc \
     gstreamer1.0-tools \
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good \
