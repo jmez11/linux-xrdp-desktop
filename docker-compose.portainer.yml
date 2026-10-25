@@ -27,6 +27,9 @@ services:
       # /dev/fuse + SYS_ADMIN: required for xrdp drive redirection (chansrv
       # mounts client-shared drives via FUSE at ~/thinclient_drives/)
       - /dev/fuse:/dev/fuse
+      # Optional: To use redirected webcams in native V4L2 apps like Zoom Desktop (see docs/ZOOM_WEBCAM_GUIDE.md):
+      # - /dev/video0:/dev/video0
+      # - /dev/video1:/dev/video1
     cap_add:
       - SYS_ADMIN
     security_opt:

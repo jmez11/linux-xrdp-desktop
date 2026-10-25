@@ -78,11 +78,9 @@ services:
 
 ### Step 3: Automatic Camera Bridging
 
-Inside the container, `entrypoint.sh` automatically detects if `/dev/video0` is present. If found, it automatically starts a background GStreamer relay on session login:
+Inside the container, `entrypoint.sh` automatically launches the dynamic multi-camera bridge daemon (`/usr/local/bin/xrdp-v4l2-bridge.py`) whenever `/dev/video0` is present.
 
-```bash
-gst-launch-1.0 pipewiresrc ! videoconvert ! videoscale ! video/x-raw,format=YUY2 ! v4l2sink device=/dev/video0 sync=false
-```
+The bridge watches PipeWire for camera sources (`xrdp-camera-0`, `xrdp-camera-1`, etc.) and automatically links each active camera to its corresponding `/dev/videoN` device node in the background.
 
 ### Step 4: Open Zoom Native
 
@@ -93,6 +91,60 @@ zoom
 1. Open **Settings** (gear icon) → **Video**.
 2. Under the **Camera** dropdown, select **"XRDP Camera"** (or `/dev/video0`).
 3. Your live redirected video stream will display directly in Zoom.
+
+---
+
+## Multiple Cameras Setup (Browsers & Standalone Apps)
+
+RDP allows redirecting multiple webcams simultaneously (e.g. built-in laptop camera, external USB webcam, OBS virtual camera, capture card). The container supports up to 8 simultaneous cameras.
+
+### 1. Selecting Multiple Cameras in your RDP Client
+
+- **Windows Remote Desktop (`mstsc.exe`):**
+  1. Click **Show Options** → **Local Resources** tab.
+  2. Under *Local devices and resources*, click **More...**.
+  3. Expand **Video capture devices** and tick **all** the cameras you want to redirect.
+  4. Connect to your session.
+- **FreeRDP:**
+  Pass multiple camera parameters:
+  ```bash
+  xfreerdp /v:<host>:3389 /camera:device:0,format:h264 /camera:device:1,format:h264
+  ```
+
+### 2. In Web Browsers (Firefox, Edge, Chrome) — Zero Setup
+All redirected cameras are published as independent native PipeWire sources (`xrdp-camera-0`, `xrdp-camera-1`, ...).
+In Google Meet, Zoom Web, Teams Web, or webcamtests.com, the browser's camera selection dropdown will automatically list all of your redirected cameras by their client names (e.g., "Lenovo Performance RGB Camera", "Logitech Brio"). You can switch between cameras directly in the web app.
+
+### 3. In Standalone Native Apps (Zoom Desktop, OBS, VLC)
+To expose multiple cameras to native V4L2 apps, create multiple loopback devices on the host:
+
+1. **Load `v4l2loopback` with multiple devices on Docker host:**
+   ```bash
+   sudo modprobe -r v4l2loopback 2>/dev/null || true
+   sudo modprobe v4l2loopback devices=4 video_nr=0,1,2,3 card_label="XRDP Camera 1","XRDP Camera 2","XRDP Camera 3","XRDP Camera 4" exclusive_caps=1,1,1,1
+   ```
+   To make it persistent on host boot, put in `/etc/modprobe.d/v4l2loopback.conf`:
+   ```text
+   options v4l2loopback devices=4 video_nr=0,1,2,3 card_label="XRDP Camera 1","XRDP Camera 2","XRDP Camera 3","XRDP Camera 4" exclusive_caps=1,1,1,1
+   ```
+
+2. **Map all devices into your container:**
+   ```yaml
+   devices:
+     - /dev/video0:/dev/video0
+     - /dev/video1:/dev/video1
+     - /dev/video2:/dev/video2
+     - /dev/video3:/dev/video3
+   ```
+
+3. **Automatic Mapping:**
+   The container's `xrdp-v4l2-bridge.py` daemon automatically maps:
+   - Camera 1 (`xrdp-camera-0`) → `/dev/video0` ("XRDP Camera 1")
+   - Camera 2 (`xrdp-camera-1`) → `/dev/video1` ("XRDP Camera 2")
+   - Camera 3 (`xrdp-camera-2`) → `/dev/video2` ("XRDP Camera 3")
+   - Camera 4 (`xrdp-camera-3`) → `/dev/video3` ("XRDP Camera 4")
+
+In Zoom Desktop's **Settings → Video**, select between your cameras in the dropdown menu.
 
 ---
 
