@@ -10,14 +10,14 @@ Item {
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
     Plasmoid.preferredRepresentation: Plasmoid.fullRepresentation
 
-    property string cityName: "Cupertino"
+    property string cityName: "Locating..."
     property string temperature: "--°"
-    property string conditionText: "Sunny"
+    property string conditionText: "Loading"
     property string highLowText: "H:--°  L:--°"
-    property string weatherGlyph: "☀"
-    property real latitude: 37.3230
-    property real longitude: -122.0322
-    property bool hasGeo: true
+    property string weatherGlyph: "⛅"
+    property real latitude: 37.7749
+    property real longitude: -122.4194
+    property bool hasGeo: false
 
     function mapWeatherCode(code) {
         if (code === 0) return { text: "Clear", glyph: "☀" };
@@ -59,8 +59,29 @@ Item {
     }
 
     function geolocateAndFetch() {
-        // macOS default is Cupertino without IP geolocation tracking
-        root.fetchWeatherForCoords(root.latitude, root.longitude);
+        var geoXhr = new XMLHttpRequest();
+        geoXhr.open("GET", "https://get.geojs.io/v1/ip/geo.json", true);
+        geoXhr.onreadystatechange = function() {
+            if (geoXhr.readyState === XMLHttpRequest.DONE) {
+                if (geoXhr.status === 200) {
+                    try {
+                        var geo = JSON.parse(geoXhr.responseText);
+                        if (geo.city) root.cityName = geo.city;
+                        if (geo.latitude && geo.longitude) {
+                            root.latitude = parseFloat(geo.latitude);
+                            root.longitude = parseFloat(geo.longitude);
+                            root.hasGeo = true;
+                        }
+                    } catch (e) {}
+                }
+                if (root.hasGeo) {
+                    root.fetchWeatherForCoords(root.latitude, root.longitude);
+                } else {
+                    root.geolocateFallback();
+                }
+            }
+        };
+        geoXhr.send();
     }
 
     function geolocateFallback() {

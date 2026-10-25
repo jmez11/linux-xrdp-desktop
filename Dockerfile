@@ -271,10 +271,11 @@ RUN mkdir -p /usr/share/icons /usr/share/aurorae/themes /usr/share/plasma/plasmo
 COPY plasmoids/ /usr/share/plasma/plasmoids/
 COPY xrdp-drives-sync.py /usr/local/bin/xrdp-drives-sync.py
 COPY xrdp-deb-installer.sh /usr/local/bin/xrdp-deb-installer.sh
+COPY xrdp-dock-helper.py /usr/local/bin/xrdp-dock-helper.py
 COPY vscode-launch /usr/local/bin/vscode-launch
 COPY PicturesSheet.qml /usr/share/kpackage/kcms/kcm_users/contents/ui/PicturesSheet.qml
 COPY UserDetailsPage.qml /usr/share/kpackage/kcms/kcm_users/contents/ui/UserDetailsPage.qml
-RUN chmod +x /usr/local/bin/xrdp-drives-sync.py /usr/local/bin/xrdp-deb-installer.sh /usr/local/bin/vscode-launch \
+RUN chmod +x /usr/local/bin/xrdp-drives-sync.py /usr/local/bin/xrdp-deb-installer.sh /usr/local/bin/xrdp-dock-helper.py /usr/local/bin/vscode-launch \
     && ln -sf /usr/local/bin/vscode-launch /usr/local/bin/code \
     && ln -sf /usr/local/bin/vscode-launch /usr/share/code/code \
     && ln -sf /usr/local/bin/vscode-launch /usr/bin/code \

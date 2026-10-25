@@ -20,11 +20,14 @@
 #   7. Left-aligned traffic-light window controls (Summaculate Aurorae, XIA).
 set -u
 
-SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v8.done"
+SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v9.done"
 [ -f "$SENTINEL" ] && exit 0
 
 WALLPAPER="/usr/share/backgrounds/xrdp-wow.jpg"
 mkdir -p "$HOME/.config" "$HOME/.local/share/konsole" "$HOME/.local/share/applications" "$HOME/Desktop" "$HOME/Downloads" "$HOME/Documents"
+
+# Initialize default dock applications list if not already present
+/usr/local/bin/xrdp-dock-helper.py init >/dev/null 2>&1 || true
 
 # Ensure XDG user dirs explicitly point Desktop to ~/Desktop (avoiding desktop:/ falling back to $HOME)
 cat << 'EOF' > "$HOME/.config/user-dirs.dirs"
@@ -294,7 +297,7 @@ for (var d = 0; d < allDesktops.length; d++) {
         var curH = (curG && curG.height > 0) ? curG.height : 1080;
 
         var dockWidth = Math.min(1040, curW - 32);
-        var dockHeight = 116;
+        var dockHeight = 140;
         var dockX = Math.max(16, Math.round((curW - dockWidth) / 2));
         var dockY = Math.max(420, curH - dockHeight - 4);
 

@@ -8,7 +8,7 @@ Item {
     id: root
     anchors.fill: parent
     implicitWidth: 1040
-    implicitHeight: 116
+    implicitHeight: 140
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
     Plasmoid.preferredRepresentation: Plasmoid.fullRepresentation
 
@@ -16,6 +16,8 @@ Item {
     property bool mouseInside: false
     property int baseIconSize: 44
     property int taskRevision: 0
+    property int menuAppIndex: -1
+    property var menuAppItem: null
 
     TaskManager.TasksModel {
         id: tasksModel
@@ -38,8 +40,33 @@ Item {
         }
     }
 
+    // Helper DataSource for dock configuration (add / remove / dump)
+    PlasmaCore.DataSource {
+        id: dockHelper
+        engine: "executable"
+        connectedSources: []
+        onNewData: {
+            var out = data["stdout"];
+            disconnectSource(sourceName);
+            if (out && out.trim().length > 0) {
+                try {
+                    var parsed = JSON.parse(out.trim());
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        root.updateDockModel(parsed);
+                    }
+                } catch (e) {
+                    // Ignore non-JSON output
+                }
+            }
+        }
+        function execCommand(cmd) {
+            connectSource(cmd + " # " + Date.now());
+        }
+    }
+
     ListModel {
         id: dockModel
+        // Pre-populated defaults so dock renders instantly without any delay
         ListElement { name: "Dolphin"; appMatch: "dolphin"; iconName: "/usr/share/icons/breeze-dark/apps/48/system-file-manager.svg"; cmd: "dolphin"; isSeparatorBefore: false }
         ListElement { name: "Firefox"; appMatch: "firefox"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/firefox.svg"; cmd: "firefox"; isSeparatorBefore: false }
         ListElement { name: "Visual Studio Code"; appMatch: "code"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/vscode.svg"; cmd: "/usr/local/bin/vscode-launch"; isSeparatorBefore: false }
@@ -57,6 +84,42 @@ Item {
         ListElement { name: "System Settings"; appMatch: "systemsettings"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/apps/systemsettings.svg"; cmd: "systemsettings5"; isSeparatorBefore: false }
         ListElement { name: "Shared Drives"; appMatch: "thinclient_drives"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/devices/drive-harddisk.svg"; cmd: "dolphin ~/thinclient_drives"; isSeparatorBefore: true }
         ListElement { name: "Trash"; appMatch: "trash"; iconName: "/usr/share/icons/Mkos-Big-Sur/128x128/places/user-trash-full.svg"; cmd: "dolphin trash:/"; isSeparatorBefore: false }
+    }
+
+    function updateDockModel(appsList) {
+        if (!appsList || appsList.length === 0) return;
+        if (appsList.length === dockModel.count) {
+            var diff = false;
+            for (var k = 0; k < appsList.length; k++) {
+                var cur = dockModel.get(k);
+                if (cur.name !== appsList[k].name || cur.cmd !== appsList[k].cmd) {
+                    diff = true;
+                    break;
+                }
+            }
+            if (!diff) return;
+        }
+        dockModel.clear();
+        for (var i = 0; i < appsList.length; i++) {
+            var it = appsList[i];
+            dockModel.append({
+                name: it.name || "App",
+                appMatch: it.appMatch || "",
+                iconName: it.iconName || "application-x-executable",
+                cmd: it.cmd || "",
+                isSeparatorBefore: it.isSeparatorBefore === true
+            });
+        }
+    }
+
+    function addAppToDock(target) {
+        if (!target) return;
+        var quoted = "'" + target.replace(/'/g, "'\\''") + "'";
+        dockHelper.execCommand("/usr/local/bin/xrdp-dock-helper.py add " + quoted);
+    }
+
+    function removeAppFromDock(index) {
+        dockHelper.execCommand("/usr/local/bin/xrdp-dock-helper.py remove " + index);
     }
 
     function findTaskIndex(matchKey, rev) {
@@ -82,7 +145,7 @@ Item {
         if (!desk || desk.width < 500 || desk.height < 350) return;
 
         var targetW = Math.min(1040, Math.round(desk.width - 24));
-        var targetH = 116;
+        var targetH = 140;
         var targetX = Math.round((desk.width - targetW) / 2);
         var targetY = Math.round(desk.height - targetH - 4);
 
@@ -92,7 +155,10 @@ Item {
         if (Math.abs(appletItem.y - targetY) > 2) appletItem.y = targetY;
     }
 
-    Component.onCompleted: centerOnDesktop()
+    Component.onCompleted: {
+        centerOnDesktop();
+        dockHelper.execCommand("/usr/local/bin/xrdp-dock-helper.py dump");
+    }
 
     Timer {
         interval: 500
@@ -110,12 +176,18 @@ Item {
         width: dockRow.width + 26
         height: 60
         radius: 19
-        color: "#6B242838"
-        border.color: "#4DFFFFFF"
-        border.width: 1
+        color: dockDropArea.containsDrag ? "#802A3048" : "#6B242838"
+        border.color: dockDropArea.containsDrag ? "#99FFFFFF" : "#4DFFFFFF"
+        border.width: dockDropArea.containsDrag ? 2 : 1
 
         Behavior on width {
             NumberAnimation { duration: 75; easing.type: Easing.OutQuad }
+        }
+        Behavior on color {
+            ColorAnimation { duration: 150 }
+        }
+        Behavior on border.color {
+            ColorAnimation { duration: 150 }
         }
     }
 
@@ -195,7 +267,7 @@ Item {
                 // Hover tooltip pill above the magnified icon
                 Rectangle {
                     id: tooltipPill
-                    visible: root.mouseInside && delegateRoot.dist < 25
+                    visible: root.mouseInside && delegateRoot.dist < 25 && root.menuAppIndex < 0
                     anchors.horizontalCenter: iconItem.horizontalCenter
                     anchors.bottom: iconItem.top
                     anchors.bottomMargin: 8
@@ -244,14 +316,185 @@ Item {
         }
     }
 
+    // Dismiss context menu when clicking outside
+    MouseArea {
+        anchors.fill: parent
+        visible: root.menuAppIndex >= 0
+        z: 100
+        onClicked: {
+            root.menuAppIndex = -1;
+            root.menuAppItem = null;
+        }
+    }
+
+    // macOS-style Right-Click Context Menu Popup
+    Rectangle {
+        id: contextMenuPopup
+        visible: root.menuAppIndex >= 0
+        z: 200
+        width: 170
+        height: menuCol.implicitHeight + 16
+        radius: 10
+        color: "#F01E1E28"
+        border.color: "#50FFFFFF"
+        border.width: 1
+
+        x: {
+            if (root.menuAppIndex < 0 || !dockRepeater.itemAt(root.menuAppIndex)) return 0;
+            var it = dockRepeater.itemAt(root.menuAppIndex);
+            var pos = it.mapToItem(root, 0, 0);
+            var targetX = pos.x + (it.width - width) / 2;
+            return Math.max(10, Math.min(root.width - width - 10, targetX));
+        }
+        y: {
+            if (root.menuAppIndex < 0 || !dockRepeater.itemAt(root.menuAppIndex)) return 0;
+            var it = dockRepeater.itemAt(root.menuAppIndex);
+            var pos = it.mapToItem(root, 0, 0);
+            return Math.max(8, pos.y - height - 10);
+        }
+
+        Column {
+            id: menuCol
+            anchors.centerIn: parent
+            width: parent.width - 16
+            spacing: 3
+
+            Text {
+                width: parent.width
+                text: root.menuAppItem ? root.menuAppItem.name : ""
+                font.family: "Inter"
+                font.pixelSize: 12
+                font.weight: Font.Bold
+                color: "#A0FFFFFF"
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignHCenter
+                topPadding: 2
+                bottomPadding: 3
+            }
+
+            Rectangle {
+                width: parent.width
+                height: 1
+                color: "#25FFFFFF"
+            }
+
+            Rectangle {
+                id: openBtn
+                width: parent.width
+                height: 26
+                radius: 6
+                color: openMouse.containsMouse ? "#30FFFFFF" : "transparent"
+                Text {
+                    anchors.centerIn: parent
+                    text: {
+                        if (!root.menuAppItem) return "Open";
+                        var isRunning = root.findTaskIndex(root.menuAppItem.appMatch, root.taskRevision) !== -1;
+                        return isRunning ? "Bring to Front" : "Open";
+                    }
+                    font.family: "Inter"
+                    font.pixelSize: 12
+                    font.weight: Font.Medium
+                    color: "#FFFFFF"
+                }
+                MouseArea {
+                    id: openMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: {
+                        if (root.menuAppIndex >= 0 && root.menuAppItem) {
+                            var entry = root.menuAppItem;
+                            var runningIdx = root.findTaskIndex(entry.appMatch, root.taskRevision);
+                            if (runningIdx !== -1) {
+                                var modelIdx = tasksModel.index(runningIdx, 0);
+                                tasksModel.requestActivate(modelIdx);
+                            } else {
+                                var it = dockRepeater.itemAt(root.menuAppIndex);
+                                if (it) it.triggerBounce();
+                                executable.exec(entry.cmd + " >/dev/null 2>&1 &");
+                            }
+                        }
+                        root.menuAppIndex = -1;
+                        root.menuAppItem = null;
+                    }
+                }
+            }
+
+            Rectangle {
+                id: removeBtn
+                visible: root.menuAppItem && root.menuAppItem.appMatch !== "trash" && root.menuAppItem.appMatch !== "thinclient_drives"
+                width: parent.width
+                height: 26
+                radius: 6
+                color: removeMouse.containsMouse ? "#40FF453A" : "transparent"
+                Text {
+                    anchors.centerIn: parent
+                    text: "Remove from Dock"
+                    font.family: "Inter"
+                    font.pixelSize: 12
+                    font.weight: Font.Medium
+                    color: removeMouse.containsMouse ? "#FF6961" : "#FF453A"
+                }
+                MouseArea {
+                    id: removeMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: {
+                        if (root.menuAppIndex >= 0) {
+                            root.removeAppFromDock(root.menuAppIndex);
+                        }
+                        root.menuAppIndex = -1;
+                        root.menuAppItem = null;
+                    }
+                }
+            }
+        }
+    }
+
+    // Drag and Drop Area for adding apps to the dock (macOS style)
+    DropArea {
+        id: dockDropArea
+        anchors.fill: dockBg
+        anchors.margins: -14
+        z: 30
+
+        onEntered: function(drag) {
+            drag.accept();
+        }
+        onPositionChanged: function(drag) {
+            drag.accept();
+        }
+        onDropped: function(drop) {
+            var target = "";
+            if (drop.hasUrls && drop.urls.length > 0) {
+                target = drop.urls[0].toString();
+            } else if (drop.hasText && drop.text.length > 0) {
+                target = drop.text;
+            } else if (drop.getDataAsString) {
+                target = drop.getDataAsString("text/uri-list") || drop.getDataAsString("text/plain");
+            }
+            if (target && target.trim().length > 0) {
+                var lines = target.split(/[\r\n]+/);
+                for (var i = 0; i < lines.length; i++) {
+                    var l = lines[i].trim();
+                    if (l.length > 0) {
+                        root.addAppToDock(l);
+                        break;
+                    }
+                }
+            }
+            drop.accept();
+        }
+    }
+
     MouseArea {
         id: dockMouse
         anchors.left: dockBg.left
         anchors.right: dockBg.right
         anchors.bottom: parent.bottom
-        height: parent.height
+        height: 70
         hoverEnabled: true
-        acceptedButtons: Qt.LeftButton
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        z: 20
 
         onPositionChanged: {
             root.mouseInside = true;
@@ -264,23 +507,32 @@ Item {
             root.mouseXPos = -1000;
         }
 
-        onClicked: {
+        onClicked: function(mouse) {
             var pt = mapToItem(dockRow, mouse.x, mouse.y);
             for (var i = 0; i < dockRepeater.count; i++) {
                 var item = dockRepeater.itemAt(i);
                 if (item && pt.x >= item.x && pt.x <= item.x + item.width) {
                     var entry = dockModel.get(i);
-                    var runningIdx = root.findTaskIndex(entry.appMatch, root.taskRevision);
-                    if (runningIdx !== -1) {
-                        var modelIdx = tasksModel.index(runningIdx, 0);
-                        tasksModel.requestActivate(modelIdx);
+                    if (mouse.button === Qt.RightButton) {
+                        root.menuAppIndex = i;
+                        root.menuAppItem = entry;
                     } else {
-                        item.triggerBounce();
-                        executable.exec(entry.cmd + " >/dev/null 2>&1 &");
+                        root.menuAppIndex = -1;
+                        root.menuAppItem = null;
+                        var runningIdx = root.findTaskIndex(entry.appMatch, root.taskRevision);
+                        if (runningIdx !== -1) {
+                            var modelIdx = tasksModel.index(runningIdx, 0);
+                            tasksModel.requestActivate(modelIdx);
+                        } else {
+                            item.triggerBounce();
+                            executable.exec(entry.cmd + " >/dev/null 2>&1 &");
+                        }
                     }
-                    break;
+                    return;
                 }
             }
+            root.menuAppIndex = -1;
+            root.menuAppItem = null;
         }
     }
 }
