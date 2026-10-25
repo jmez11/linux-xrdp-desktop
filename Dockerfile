@@ -313,6 +313,8 @@ RUN chmod +x /usr/local/bin/xrdp-drives-sync.py /usr/local/bin/xrdp-deb-installe
     && ln -sf /usr/local/bin/vscode-launch /usr/local/bin/code \
     && ln -sf /usr/local/bin/vscode-launch /usr/share/code/code \
     && ln -sf /usr/local/bin/vscode-launch /usr/bin/code \
+    && mkdir -p /etc/apt/apt.conf.d \
+    && printf 'DPkg::Post-Invoke { "/usr/local/bin/xrdp-patch-browser-launchers.sh || true"; };\n' > /etc/apt/apt.conf.d/99-xrdp-browser-patch \
     && sed -i 's|^Icon=.*|Icon=/usr/share/icons/Mkos-Big-Sur/128x128/apps/vscode.svg|' /usr/share/applications/code.desktop 2>/dev/null || true \
     && cp /usr/share/applications/code.desktop /usr/share/applications/vscode.desktop 2>/dev/null || true \
     && update-desktop-database /usr/share/applications 2>/dev/null || true

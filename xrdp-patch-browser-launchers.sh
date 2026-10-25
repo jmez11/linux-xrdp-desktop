@@ -9,6 +9,11 @@
 WRAPPER="/usr/local/bin/chromium-browser-wrapper"
 [ -x "$WRAPPER" ] || exit 0
 
+SUDO=""
+if [ "$(id -u)" -ne 0 ] && sudo -n true 2>/dev/null; then
+    SUDO="sudo -n"
+fi
+
 # 1. Overwrite /usr/bin symlinks so any tool or launcher calling /usr/bin directly hits the wrapper
 for bin in microsoft-edge microsoft-edge-stable google-chrome google-chrome-stable brave-browser chromium chromium-browser; do
     REAL_EXISTS=0
@@ -19,8 +24,8 @@ for bin in microsoft-edge microsoft-edge-stable google-chrome google-chrome-stab
         *chromium*) ([ -d /usr/lib/chromium-browser ] || [ -d /usr/lib/chromium ]) && REAL_EXISTS=1 ;;
     esac
     if [ "$REAL_EXISTS" -eq 1 ]; then
-        ln -sf "$WRAPPER" "/usr/bin/$bin" 2>/dev/null || true
-        ln -sf "$WRAPPER" "/usr/local/bin/$bin" 2>/dev/null || true
+        $SUDO ln -sf "$WRAPPER" "/usr/bin/$bin" 2>/dev/null || true
+        $SUDO ln -sf "$WRAPPER" "/usr/local/bin/$bin" 2>/dev/null || true
     fi
 done
 
@@ -36,14 +41,14 @@ for dir in "${DESKTOP_DIRS[@]}"; do
     for d in "$dir"/microsoft-edge*.desktop "$dir"/google-chrome*.desktop "$dir"/chromium*.desktop "$dir"/brave*.desktop; do
         [ -f "$d" ] || continue
         if ! grep -q "WebRtcPipeWireCamera" "$d"; then
-            sed -i 's|^Exec=\([^ ]*\)\(.*%U\)|Exec=\1 --enable-features=WebRtcPipeWireCamera\2|' "$d" 2>/dev/null || true
-            sed -i 's|^Exec=\([^ ]*\)\(.*%u\)|Exec=\1 --enable-features=WebRtcPipeWireCamera\2|' "$d" 2>/dev/null || true
+            $SUDO sed -i 's|^Exec=\([^ ]*\)\(.*%U\)|Exec=\1 --enable-features=WebRtcPipeWireCamera\2|' "$d" 2>/dev/null || true
+            $SUDO sed -i 's|^Exec=\([^ ]*\)\(.*%u\)|Exec=\1 --enable-features=WebRtcPipeWireCamera\2|' "$d" 2>/dev/null || true
             if ! grep -q "WebRtcPipeWireCamera" "$d"; then
-                sed -i '/^Exec=/ s/$/ --enable-features=WebRtcPipeWireCamera/' "$d" 2>/dev/null || true
+                $SUDO sed -i '/^Exec=/ s/$/ --enable-features=WebRtcPipeWireCamera/' "$d" 2>/dev/null || true
             fi
         fi
     done
 done
 
-update-desktop-database /usr/share/applications 2>/dev/null || true
+$SUDO update-desktop-database /usr/share/applications 2>/dev/null || true
 kbuildsycoca5 >/dev/null 2>&1 || true
