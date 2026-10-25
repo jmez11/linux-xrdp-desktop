@@ -12,8 +12,8 @@ if [ -e /dev/video0 ]; then
         pkill -USR1 -f xrdp-v4l2-bridge.py 2>/dev/null || true
     fi
 
-    # Wait up to 1.5 seconds for /dev/video0 to enter Video Capture mode with active frames
-    for i in $(seq 1 15); do
+    # Wait up to 3 seconds for /dev/video0 to enter Video Capture mode with active frames
+    for i in $(seq 1 30); do
         if v4l2-ctl -d /dev/video0 --all 2>/dev/null | grep -qi "Video Capture"; then
             break
         fi

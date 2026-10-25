@@ -52,7 +52,7 @@ V4L2_APP_NAMES = {
 }
 
 BRIDGE_MODE = os.environ.get("XRDP_V4L2_MODE", "auto").strip().lower()
-IDLE_GRACE_PERIOD = 3.0
+IDLE_GRACE_PERIOD = 15.0
 
 # active_relays[dev_path] = {
 #     "proc": subprocess.Popen,
@@ -121,10 +121,19 @@ def is_v4l2_app_running():
         try:
             with open(f"/proc/{pid_str}/comm", "r") as f:
                 comm = f.read().strip().lower()
-            if comm in V4L2_APP_NAMES:
+            if comm in V4L2_APP_NAMES or any(name in comm for name in ("obs", "zoom", "cheese", "vlc")):
                 return True
         except OSError:
-            continue
+            pass
+
+        try:
+            with open(f"/proc/{pid_str}/cmdline", "r") as f:
+                cmdline = f.read().replace("\0", " ").lower()
+            if any(name in cmdline for name in ("obs", "zoom", "cheese", "vlc")):
+                return True
+        except OSError:
+            pass
+
     return False
 
 
@@ -317,10 +326,9 @@ def main():
 
                     cmd = [
                         "gst-launch-1.0",
-                        "-q",
+                        "-v",
                     ] + src_args + [
                         "!", "videoconvert",
-                        "!", "videoscale",
                         "!", "video/x-raw,format=YUY2",
                         "!", "v4l2sink", f"device={dev_path}", "sync=false"
                     ]
