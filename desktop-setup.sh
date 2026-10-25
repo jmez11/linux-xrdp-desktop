@@ -20,7 +20,7 @@
 #   7. Left-aligned traffic-light window controls (Summaculate Aurorae, XIA).
 set -u
 
-SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v7.done"
+SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v8.done"
 [ -f "$SENTINEL" ] && exit 0
 
 WALLPAPER="/usr/share/backgrounds/xrdp-wow.jpg"
@@ -99,7 +99,6 @@ gtk-icon-theme-name=Mkos-Big-Sur
 gtk-font-name=Inter 10
 gtk-application-prefer-dark-theme=true
 gtk-decoration-layout=close,minimize,maximize:
-gtk-modules=appmenu-gtk-module
 gtk-xft-antialias=1
 gtk-xft-hinting=1
 gtk-xft-hintstyle=hintslight
@@ -150,8 +149,10 @@ kwriteconfig5 --file kwinrc --group kwinrc --key BorderlessMaximizedWindows "fal
 kwriteconfig5 --file kwinrc --group org.kde.kdecoration2 --key ButtonsOnLeft "XIA"
 kwriteconfig5 --file kwinrc --group org.kde.kdecoration2 --key ButtonsOnRight ""
 kwriteconfig5 --file kwinrc --group org.kde.kdecoration2 --key BorderSize "None"
-kwriteconfig5 --file kwinrc --group Compositing --key Enabled "false"
+kwriteconfig5 --file kwinrc --group Compositing --key Enabled "true"
 kwriteconfig5 --file kwinrc --group Compositing --key OpenGLIsUnsafe "false"
+kwriteconfig5 --file kwinrc --group Plugins --key blurEnabled "true"
+kwriteconfig5 --file kwinrc --group Plugins --key contrastEnabled "true"
 kwriteconfig5 --file kwinrc --group ElectricBorders --key TopLeft "Overview"
 
 kwriteconfig5 --file kscreenlockerrc --group Daemon --key Autolock "false"
@@ -192,8 +193,8 @@ for (var i = 0; i < existingPanels.length; i++) {
 
 // -------------------------------------------------------------------------
 // Top Panel -> Menu Bar
-// Order: User Switcher, Window Title, Global Menu, Spacer, System Tray,
-//        Control Hub (Control Centre), Digital Clock
+// Order: Application Launcher (Kickoff), Window Title, Global Menu, Spacer,
+//        System Tray, Control Hub (Control Centre), Digital Clock
 // -------------------------------------------------------------------------
 var topPanel = new Panel("org.kde.panel");
 topPanel.location = "top";
@@ -202,11 +203,9 @@ topPanel.floating = false;
 topPanel.opacity = "translucent";
 topPanel.hiding = "none";
 
-var userSwitcher = topPanel.addWidget("org.kde.plasma.userswitcher");
-userSwitcher.currentConfigGroup = ["General"];
-userSwitcher.writeConfig("showFace", true);
-userSwitcher.writeConfig("showName", false);
-userSwitcher.writeConfig("showFullName", false);
+var launcher = topPanel.addWidget("org.kde.plasma.kickoff");
+launcher.currentConfigGroup = ["General"];
+launcher.writeConfig("icon", "distributor-logo");
 
 var winTitle = topPanel.addWidget("org.kde.windowtitle");
 winTitle.currentConfigGroup = ["General"];
@@ -338,6 +337,7 @@ echo "evaluateScript result: $EVAL_LOG" >> "$HOME/.config/desktop-setup.log"
 # Reload KWin & Plasma settings so fonts, decorations, and icons apply immediately
 qdbus org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
 plasma-apply-colorscheme BreezeDark >/dev/null 2>&1 || true
+plasma-apply-desktoptheme breeze-dark >/dev/null 2>&1 || true
 /usr/lib/x86_64-linux-gnu/libexec/plasma-changeicons Mkos-Big-Sur >/dev/null 2>&1 || true
 
 touch "$SENTINEL"

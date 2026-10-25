@@ -20,7 +20,8 @@ if [ ! -f "$HOME/.config/Code/argv.json" ]; then
 fi
 
 # Clear hardware GPU / video acceleration variables that cause Mesa/GLX to segfault under xorgxrdp
-unset LIBVA_DRIVER_NAME VGL_DISPLAY VGL_COMPRESS VGL_FPS
+# Also unset GTK modules that intercept D-Bus menus and cause Electron to segfault
+unset LIBVA_DRIVER_NAME VGL_DISPLAY VGL_COMPRESS VGL_FPS GTK_MODULES GTK3_MODULES
 export ELECTRON_OZONE_PLATFORM_HINT=x11
 export LIBGL_ALWAYS_SOFTWARE=1
 export XLIB_SKIP_ARGB_VISUALS=1
