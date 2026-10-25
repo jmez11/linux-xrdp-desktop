@@ -20,11 +20,16 @@
 #   7. Left-aligned traffic-light window controls (Summaculate Aurorae, XIA).
 set -u
 
-SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v9.done"
+SENTINEL="$HOME/.config/xrdp-kde-macos-setup-v10.done"
 [ -f "$SENTINEL" ] && exit 0
 
 WALLPAPER="/usr/share/backgrounds/xrdp-wow.jpg"
 mkdir -p "$HOME/.config" "$HOME/.local/share/konsole" "$HOME/.local/share/applications" "$HOME/Desktop" "$HOME/Downloads" "$HOME/Documents"
+
+# Clean stale Chromium / Edge / Chrome lock files from persistent volume
+rm -f "$HOME/.config/microsoft-edge/Singleton"* \
+      "$HOME/.config/google-chrome/Singleton"* \
+      "$HOME/.config/chromium/Singleton"* 2>/dev/null || true
 
 # Initialize default dock applications list if not already present
 /usr/local/bin/xrdp-dock-helper.py init >/dev/null 2>&1 || true

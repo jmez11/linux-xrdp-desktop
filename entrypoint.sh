@@ -27,6 +27,11 @@ chown "$USERNAME:$USERNAME" "/run/user/$USER_UID"
 
 mkdir -p "/home/$USERNAME/Desktop" "/home/$USERNAME/Downloads" "/home/$USERNAME/Documents" "/home/$USERNAME/.config"
 
+# Clean stale Chromium / Edge / Chrome lock files from persistent volume
+rm -f "/home/$USERNAME/.config/microsoft-edge/Singleton"* \
+      "/home/$USERNAME/.config/google-chrome/Singleton"* \
+      "/home/$USERNAME/.config/chromium/Singleton"* 2>/dev/null || true
+
 # Guarantee XDG user dirs explicitly point Desktop to ~/Desktop from the very first session start
 cat << 'EOF' > "/home/$USERNAME/.config/user-dirs.dirs"
 XDG_DESKTOP_DIR="$HOME/Desktop"
@@ -72,6 +77,11 @@ export XDG_SESSION_DESKTOP="KDE"
 export KDE_FULL_SESSION="true"
 export KDE_SESSION_VERSION="5"
 export QT_QPA_PLATFORM="xcb"
+unset GTK_MODULES GTK3_MODULES
+export UBUNTU_MENUPROXY=0
+if [ ! -e /dev/dri/renderD128 ]; then
+    unset LIBVA_DRIVER_NAME
+fi
 mkdir -p -m 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
 
 pulseaudio --start --exit-idle-time=-1 2>/dev/null || true

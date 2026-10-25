@@ -41,8 +41,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     kdialog \
     libnotify-bin \
     desktop-file-utils \
-    appmenu-gtk3-module \
-    appmenu-gtk2-module \
     libdbusmenu-glib4 \
     libdbusmenu-gtk3-4 \
     libdbusmenu-qt5-2 \
@@ -266,7 +264,9 @@ RUN mkdir -p /usr/share/icons /usr/share/aurorae/themes /usr/share/plasma/plasmo
     && update-desktop-database /usr/share/applications 2>/dev/null || true \
     && mkdir -p /etc/polkit-1/rules.d /var/lib/polkit-1/localauthority/50-local.d \
     && printf 'polkit.addRule(function(action, subject) {\n    if (subject.isInGroup("sudo")) {\n        return polkit.Result.YES;\n    }\n});\n' > /etc/polkit-1/rules.d/49-nopasswd-sudo.rules \
-    && printf '[Allow all polkit actions for sudo group]\nIdentity=unix-group:sudo\nAction=*\nResultAny=yes\nResultInactive=yes\nResultActive=yes\n' > /var/lib/polkit-1/localauthority/50-local.d/49-nopasswd-sudo.pkla
+    && printf '[Allow all polkit actions for sudo group]\nIdentity=unix-group:sudo\nAction=*\nResultAny=yes\nResultInactive=yes\nResultActive=yes\n' > /var/lib/polkit-1/localauthority/50-local.d/49-nopasswd-sudo.pkla \
+    && rm -f /etc/X11/Xsession.d/*appmenu* 2>/dev/null || true \
+    && echo "UBUNTU_MENUPROXY=0" >> /etc/environment
 
 COPY plasmoids/ /usr/share/plasma/plasmoids/
 COPY xrdp-drives-sync.py /usr/local/bin/xrdp-drives-sync.py
