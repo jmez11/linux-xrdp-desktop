@@ -199,10 +199,11 @@ def stop_pipeline(relay):
         log(f"Stopping pipeline for {cam_name} -> {dev} (PID {proc.pid})")
         try:
             proc.terminate()
-            proc.wait(timeout=1.5)
+            proc.wait(timeout=0.5)
         except Exception:
             try:
                 proc.kill()
+                proc.wait(timeout=0.5)
             except Exception:
                 pass
     relay["proc"] = None
@@ -249,7 +250,26 @@ def main():
                 if dev_path not in active_dev_paths:
                     stop_pipeline(active_relays.pop(dev_path))
 
-            # Evaluate each active camera and its corresponding /dev/videoN node
+            # Check which devices are currently open by a client application
+            devs_in_use = {dev: is_device_in_use_by_client(dev, our_pids) for dev in active_dev_paths}
+            any_in_use = any(devs_in_use.values())
+
+            # First pass: stop pipelines that are no longer needed.
+            # In multi-camera RDP sessions, the client device (e.g. Android/Quest Camera HAL)
+            # only supports streaming one physical camera at a time. Shutting down inactive
+            # pipelines immediately frees the client camera hardware and resets PipeWire state.
+            for dev_path, relay in list(active_relays.items()):
+                in_use = devs_in_use.get(dev_path, False)
+                proc = relay.get("proc")
+                if proc is not None:
+                    if any_in_use and not in_use:
+                        log(f"Stopping inactive pipeline for {relay.get('cam_name')} -> {dev_path} (another camera in use)")
+                        stop_pipeline(relay)
+                    elif not any_in_use and not v4l2_app_active and (now - relay.get("last_needed", 0.0) >= IDLE_GRACE_PERIOD):
+                        log(f"Stopping idle pipeline for {relay.get('cam_name')} -> {dev_path}")
+                        stop_pipeline(relay)
+
+            # Second pass: evaluate each active camera and launch the needed pipeline
             for idx, cam in enumerate(cameras):
                 dev_path = f"/dev/video{idx}"
                 if not os.path.exists(dev_path):
@@ -283,14 +303,22 @@ def main():
                     relay["cam_serial"] = cam_serial
                     relay["cam_name"] = cam_name
 
+                in_use = devs_in_use.get(dev_path, False)
+
                 # Determine if camera is needed
                 is_needed = False
                 if BRIDGE_MODE == "always":
                     is_needed = True
                 elif BRIDGE_MODE == "clients_only":
-                    is_needed = is_device_in_use_by_client(dev_path, our_pids)
+                    is_needed = in_use
                 else:  # "auto"
-                    is_needed = is_device_in_use_by_client(dev_path, our_pids) or v4l2_app_active
+                    if any_in_use:
+                        is_needed = in_use
+                    elif v4l2_app_active:
+                        # Only pre-warm default video0 when no specific camera is open yet
+                        is_needed = (idx == 0)
+                    else:
+                        is_needed = False
 
                 if is_needed:
                     relay["last_needed"] = now
@@ -303,13 +331,10 @@ def main():
                     relay["last_failure"] = now
                     log(f"Pipeline for {cam_name} -> {dev_path} exited with code {exit_code}")
 
-                # Determine if pipeline should run
-                should_run = (now - relay["last_needed"] < IDLE_GRACE_PERIOD)
-
                 # Avoid tight crash-relaunch loops if pipeline fails
-                backoff_ok = (now - relay.get("last_failure", 0.0) >= 2.0)
+                backoff_ok = (now - relay.get("last_failure", 0.0) >= 0.5)
 
-                if should_run and proc is None and backoff_ok:
+                if is_needed and proc is None and backoff_ok:
                     log(f"Launching pipeline: {cam_name} (id={cam_id}, serial={cam_serial}) -> {dev_path}")
                     err_log = None
                     try:
@@ -337,10 +362,10 @@ def main():
                     relay["proc"] = p
                     our_pids.add(p.pid)
                     log(f"Pipeline started with PID {p.pid}")
-                elif not should_run and proc is not None:
+                elif not is_needed and proc is not None and (any_in_use or not v4l2_app_active):
                     stop_pipeline(relay)
 
-            # Consume the wake flag once all pipelines are launched
+            # Consume the wake flag once all pipelines are evaluated
             if os.path.exists(WAKE_FILE):
                 try:
                     os.remove(WAKE_FILE)
@@ -350,12 +375,12 @@ def main():
         except Exception as e:
             log(f"Error in main loop: {e}")
 
-        # Sleep up to 1 second, but wake immediately if SIGUSR1 arrives or wake file created
-        sleep_end = time.time() + 1.0
+        # Sleep up to 0.5 second, but wake immediately if SIGUSR1 arrives or wake file created
+        sleep_end = time.time() + 0.5
         while time.time() < sleep_end:
             if wake_requested or os.path.exists(WAKE_FILE):
                 break
-            time.sleep(0.1)
+            time.sleep(0.05)
 
 
 if __name__ == "__main__":

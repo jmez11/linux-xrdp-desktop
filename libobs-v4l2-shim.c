@@ -608,6 +608,11 @@ FILE *fopen(const char *pathname, const char *mode) {
     return f;
 }
 
+static void notify_bridge_wake(void) {
+    int fd = open("/tmp/.xrdp-camera-wake", O_WRONLY | O_CREAT | O_NONBLOCK, 0666);
+    if (fd >= 0) close(fd);
+}
+
 int v4l2_open(const char *file, int oflag, ...) {
     mode_t mode = 0;
     if (oflag & O_CREAT) {
@@ -641,11 +646,16 @@ int v4l2_open(const char *file, int oflag, ...) {
         target = get_default_v4l2_device();
     }
 
+    int fd;
     if (!real_v4l2_open) {
-        return open(target, oflag, mode);
+        fd = open(target, oflag, mode);
+    } else {
+        fd = real_v4l2_open(target, oflag, mode);
     }
-    int fd = real_v4l2_open(target, oflag, mode);
     fprintf(stderr, "[libobs-v4l2-shim] v4l2_open(\"%s\", oflag=0x%x) = %d\n", target ? target : "(null)", oflag, fd);
+    if (fd >= 0) {
+        notify_bridge_wake();
+    }
     return fd;
 }
 
@@ -658,6 +668,7 @@ int v4l2_close(int fd) {
         }
     }
     fprintf(stderr, "[libobs-v4l2-shim] v4l2_close(%d)\n", fd);
+    notify_bridge_wake();
     return real_v4l2_close ? real_v4l2_close(fd) : close(fd);
 }
 
