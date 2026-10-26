@@ -315,18 +315,7 @@ RUN chmod +x /usr/local/bin/xrdp-drives-sync.py /usr/local/bin/xrdp-deb-installe
     && ln -sf /usr/local/bin/zoom-launcher-wrapper /usr/local/bin/zoom \
     && ln -sf /usr/local/bin/obs-launcher-wrapper /usr/local/bin/obs \
     && (if [ -f /usr/bin/obs ] && [ ! -L /usr/bin/obs ]; then mv /usr/bin/obs /usr/bin/obs.real && ln -sf /usr/local/bin/obs-launcher-wrapper /usr/bin/obs; fi) \
-    && python3 -c '
-path = "/usr/lib/x86_64-linux-gnu/obs-plugins/linux-v4l2.so"
-import os
-if os.path.exists(path):
-    with open(path, "rb") as f: data = f.read()
-    target = bytes.fromhex("4c8bbd00efffffeb200f1f8000000000")
-    replacement = bytes.fromhex("4c8bbd00efffff4d85ff7429eb1b9090")
-    if target in data:
-        data = data.replace(target, replacement, 1)
-        with open(path, "wb") as f: f.write(data)
-        print("linux-v4l2.so patched successfully")
-' \
+    && python3 -c "p='/usr/lib/x86_64-linux-gnu/obs-plugins/linux-v4l2.so'; d=open(p,'rb').read(); t=bytes.fromhex('4c8bbd00efffffeb200f1f8000000000'); r=bytes.fromhex('4c8bbd00efffff4d85ff7429eb1b9090'); open(p,'wb').write(d.replace(t,r,1)) if t in d else None" \
     && ln -sf /usr/local/bin/chromium-browser-wrapper /usr/local/bin/microsoft-edge \
     && ln -sf /usr/local/bin/chromium-browser-wrapper /usr/local/bin/microsoft-edge-stable \
     && ln -sf /usr/local/bin/chromium-browser-wrapper /usr/local/bin/google-chrome \
