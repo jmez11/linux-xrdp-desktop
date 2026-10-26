@@ -613,19 +613,22 @@ static void notify_bridge_wake(void) {
     if (fd >= 0) close(fd);
 }
 
-static void notify_bridge_active(const char *dev) {
-    if (dev) {
-        char canonical[PATH_MAX];
-        const char *real_dev = realpath(dev, canonical) ? canonical : dev;
-        if (strstr(real_dev, "video")) {
-            int fd = open("/tmp/.xrdp-camera-active", O_WRONLY | O_CREAT | O_TRUNC, 0666);
-            if (fd >= 0) {
-                write(fd, real_dev, strlen(real_dev));
-                close(fd);
+static void mark_fd_active(int fd) {
+    char proc_path[64];
+    char target[128];
+    snprintf(proc_path, sizeof(proc_path), "/proc/self/fd/%d", fd);
+    ssize_t len = readlink(proc_path, target, sizeof(target) - 1);
+    if (len > 0) {
+        target[len] = '\0';
+        if (strstr(target, "video")) {
+            int out_fd = open("/tmp/.xrdp-camera-active", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+            if (out_fd >= 0) {
+                write(out_fd, target, strlen(target));
+                close(out_fd);
             }
+            notify_bridge_wake();
         }
     }
-    notify_bridge_wake();
 }
 
 int v4l2_open(const char *file, int oflag, ...) {
@@ -669,7 +672,7 @@ int v4l2_open(const char *file, int oflag, ...) {
     }
     fprintf(stderr, "[libobs-v4l2-shim] v4l2_open(\"%s\", oflag=0x%x) = %d\n", target ? target : "(null)", oflag, fd);
     if (fd >= 0) {
-        notify_bridge_active(target);
+        notify_bridge_wake();
     }
     return fd;
 }
@@ -751,6 +754,10 @@ int v4l2_ioctl(int fd, unsigned long int request, ...) {
         }
     }
 
+    if (request == VIDIOC_G_FMT || request == VIDIOC_S_FMT || request == VIDIOC_REQBUFS || request == VIDIOC_STREAMON) {
+        mark_fd_active(fd);
+    }
+
     int ret;
     if (real_v4l2_ioctl) {
         ret = real_v4l2_ioctl(fd, request, arg);
@@ -786,6 +793,10 @@ int ioctl(int fd, unsigned long int request, ...) {
     }
     if (!real_ioctl) {
         return -1;
+    }
+
+    if (request == VIDIOC_G_FMT || request == VIDIOC_S_FMT || request == VIDIOC_REQBUFS || request == VIDIOC_STREAMON) {
+        mark_fd_active(fd);
     }
 
     int ret = real_ioctl(fd, request, arg);

@@ -235,6 +235,8 @@ def main():
 
     log(f"xrdp-v4l2-bridge started (PID {os.getpid()}, MODE={BRIDGE_MODE})")
 
+    last_active_dev = None
+
     while True:
         try:
             now = time.time()
@@ -261,55 +263,38 @@ def main():
                     stop_pipeline(active_relays.pop(dev_path))
 
             # Resolve active camera hint (e.g. from shim or --wake)
-            active_hint = None
+            active_dev = None
             if os.path.exists(ACTIVE_FILE):
                 try:
                     with open(ACTIVE_FILE, "r") as f:
                         raw_hint = f.read().strip()
                         if raw_hint:
-                            active_hint = os.path.realpath(raw_hint)
+                            active_dev = os.path.realpath(raw_hint)
                 except Exception:
                     pass
 
             # If no V4L2 app is running at all and no wake requested, clear active hint
             if not app_running:
-                active_hint = None
+                active_dev = None
+                last_active_dev = None
                 if os.path.exists(ACTIVE_FILE):
                     try:
                         os.remove(ACTIVE_FILE)
                     except Exception:
                         pass
-            elif app_running and not active_hint and active_dev_paths:
-                active_hint = active_dev_paths[0]
 
-            # Check which devices are currently open by a client application
-            devs_in_use = {dev: is_device_in_use_by_client(dev, our_pids) for dev in active_dev_paths}
+            # When active camera changes in OBS, restart its pipeline so client hardware switches cleanly
+            if app_running and active_dev and active_dev != last_active_dev:
+                log(f"Active camera switched: {last_active_dev} -> {active_dev}. Restarting pipeline to refresh stream!")
+                if active_dev in active_relays:
+                    stop_pipeline(active_relays[active_dev])
+                last_active_dev = active_dev
 
-            # If active_hint is specified, prioritize it
-            if active_hint and active_hint in devs_in_use:
-                devs_in_use[active_hint] = True
-                for d in devs_in_use:
-                    if d != active_hint:
-                        devs_in_use[d] = False
-
-            any_in_use = any(devs_in_use.values())
-
-            # First pass: stop pipelines that are no longer needed.
-            # In multi-camera RDP sessions, the client device (e.g. Android/Quest Camera HAL)
-            # only supports streaming one physical camera at a time. Shutting down inactive
-            # pipelines immediately frees the client camera hardware and resets PipeWire state.
-            for dev_path, relay in list(active_relays.items()):
-                proc = relay.get("proc")
-                if proc is not None:
-                    if app_running and active_hint:
-                        if dev_path != active_hint:
-                            log(f"Stopping inactive pipeline for {relay.get('cam_name')} -> {dev_path} (switched to {active_hint})")
-                            stop_pipeline(relay)
-                    elif not app_running:
+            # First pass: stop pipelines if no app is running
+            if not app_running:
+                for dev_path, relay in list(active_relays.items()):
+                    if relay.get("proc") is not None:
                         log(f"Stopping idle pipeline for {relay.get('cam_name')} -> {dev_path} (no app running)")
-                        stop_pipeline(relay)
-                    elif not any_in_use and (now - relay.get("last_needed", 0.0) >= 2.0):
-                        log(f"Stopping idle pipeline for {relay.get('cam_name')} -> {dev_path}")
                         stop_pipeline(relay)
 
             # Second pass: evaluate each active camera and launch the needed pipeline
@@ -346,15 +331,8 @@ def main():
                     relay["cam_serial"] = cam_serial
                     relay["cam_name"] = cam_name
 
-                # Determine if camera is needed
-                is_needed = False
-                if BRIDGE_MODE == "always":
-                    is_needed = True
-                elif app_running:
-                    if active_hint:
-                        is_needed = (dev_path == active_hint)
-                    else:
-                        is_needed = devs_in_use.get(dev_path, False) or (idx == 0)
+                # Keep all cameras ready when an app is active so all 3 appear in device lists
+                is_needed = app_running or (BRIDGE_MODE == "always")
 
                 if is_needed:
                     relay["last_needed"] = now
@@ -399,8 +377,7 @@ def main():
                     our_pids.add(p.pid)
                     log(f"Pipeline started with PID {p.pid}")
                 elif not is_needed and proc is not None:
-                    if not app_running or (active_hint and dev_path != active_hint) or (now - relay.get("last_needed", 0.0) >= 2.0):
-                        stop_pipeline(relay)
+                    stop_pipeline(relay)
 
             # Consume the wake flag once all pipelines are evaluated
             if os.path.exists(WAKE_FILE):
