@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <linux/videodev2.h>
 
 /*
@@ -26,19 +27,26 @@
  *    is read-only or video4linux is missing, scandir returns -1, causing OBS to invoke
  *    free() on an uninitialized stack pointer and abort (SIGABRT).
  *    scandir/scandir64, opendir, readdir/readdir64, realpath, access, and fopen intercept
- *    /sys/class/video4linux and redirect to a synthesized /tmp/video4linux populated with
- *    active /dev/video* devices with d_type = DT_LNK and guaranteed *namelist = NULL on error.
+ *    /sys/class/video4linux, /dev/v4l/by-id, and /dev/v4l/by-path, redirecting to synthesized
+ *    trees in /tmp with d_type = DT_LNK and guaranteed *namelist = NULL on error.
  *
- * 2. Empty device_id safety:
+ * 2. In-memory hotfix for OBS Linux-V4L2 PR 6493 NULL dereference bug:
+ *    In OBS 30.0.2 linux-v4l2 plugin, v4l2_device_add_devices_from iterates
+ *    `while (current_device->next != NULL)` without checking if `current_device` is NULL.
+ *    When /dev/v4l/by-id and /dev/v4l/by-path have no devices, `first_device` is NULL,
+ *    triggering a SIGSEGV at offset 0x50. The shim automatically patches this instruction
+ *    sequence in linux-v4l2.so in memory to guard against NULL.
+ *
+ * 3. Empty device_id safety:
  *    When a source is created or queried without an explicit device_id, v4l2_open()
  *    defaults to the first accessible /dev/video* node rather than failing or aborting.
  *
- * 3. Control query safety (VIDIOC_QUERYCTRL / VIDIOC_QUERYMENU):
+ * 4. Control query safety (VIDIOC_QUERYCTRL / VIDIOC_QUERYMENU):
  *    On loopback or virtual V4L2 devices, menu controls often report step = 0 or
  *    trigger infinite iterations. v4l2_ioctl / ioctl intercept control queries to ensure
  *    step >= 1, bounds are safe, and strings are null-terminated.
  *
- * 4. Crash diagnostics:
+ * 5. Crash diagnostics:
  *    Captures SIGSEGV / SIGABRT / SIGBUS / SIGFPE / SIGILL and dumps a full stack backtrace
  *    to stderr and /tmp/obs-crash.log using async-signal-safe I/O before passing the signal
  *    to the default handler.
@@ -46,6 +54,7 @@
 
 static __thread int in_shim = 0;
 
+static void *(*real_dlopen)(const char *filename, int flags) = NULL;
 static DIR *(*real_opendir)(const char *name) = NULL;
 static struct dirent *(*real_readdir)(DIR *dirp) = NULL;
 static struct dirent64 *(*real_readdir64)(DIR *dirp) = NULL;
@@ -108,10 +117,55 @@ static void install_crash_handlers(void) {
     sigaction(SIGILL, &sa, NULL);
 }
 
+static void patch_linux_v4l2_memory(void) {
+    static int patched = 0;
+    if (patched) return;
+
+    FILE *f = fopen("/proc/self/maps", "r");
+    if (!f) return;
+    char line[512];
+    uintptr_t start = 0, end = 0;
+    while (fgets(line, sizeof(line), f)) {
+        if (strstr(line, "linux-v4l2.so") && strstr(line, "r-xp")) {
+            if (sscanf(line, "%lx-%lx", &start, &end) == 2) {
+                break;
+            }
+        }
+    }
+    fclose(f);
+
+    if (start && end && end > start) {
+        const unsigned char target[16] = {
+            0x4c, 0x8b, 0xbd, 0x00, 0xef, 0xff, 0xff, 0xeb,
+            0x20, 0x0f, 0x1f, 0x80, 0x00, 0x00, 0x00, 0x00
+        };
+        const unsigned char fix[9] = {
+            0x4d, 0x85, 0xff, 0x74, 0x29, 0xeb, 0x1b, 0x90, 0x90
+        };
+        for (uintptr_t p = start; p <= end - sizeof(target); p++) {
+            if (memcmp((void *)p, target, sizeof(target)) == 0) {
+                uintptr_t page_start = (p + 7) & ~0xFFFUL;
+                size_t page_len = (((p + 7 + sizeof(fix)) + 0xFFFUL) & ~0xFFFUL) - page_start;
+                if (mprotect((void *)page_start, page_len, PROT_READ | PROT_WRITE | PROT_EXEC) == 0) {
+                    memcpy((void *)(p + 7), fix, sizeof(fix));
+                    mprotect((void *)page_start, page_len, PROT_READ | PROT_EXEC);
+                    fprintf(stderr, "[libobs-v4l2-shim] Applied in-memory hotfix to linux-v4l2.so at %p\n", (void *)p);
+                    patched = 1;
+                }
+                break;
+            } else if (memcmp((void *)p, "\x4c\x8b\xbd\x00\xef\xff\xff\x4d\x85\xff\x74\x29\xeb\x1b\x90\x90", 16) == 0) {
+                patched = 1;
+                break;
+            }
+        }
+    }
+}
+
 __attribute__((constructor))
 static void init_shim(void) {
     install_crash_handlers();
 
+    real_dlopen = (void *(*)(const char *, int))dlsym(RTLD_NEXT, "dlopen");
     real_opendir = (DIR *(*)(const char *))dlsym(RTLD_NEXT, "opendir");
     real_readdir = (struct dirent *(*)(DIR *))dlsym(RTLD_NEXT, "readdir");
     real_readdir64 = (struct dirent64 *(*)(DIR *))dlsym(RTLD_NEXT, "readdir64");
@@ -137,7 +191,20 @@ static void init_shim(void) {
         if (!real_v4l2_ioctl) real_v4l2_ioctl = (int (*)(int, unsigned long int, ...))dlsym(h, "v4l2_ioctl");
     }
 
+    patch_linux_v4l2_memory();
+
     fprintf(stderr, "[libobs-v4l2-shim] Compatibility shim initialized successfully\n");
+}
+
+void *dlopen(const char *filename, int flags) {
+    if (!real_dlopen) {
+        real_dlopen = (void *(*)(const char *, int))dlsym(RTLD_NEXT, "dlopen");
+    }
+    void *res = real_dlopen ? real_dlopen(filename, flags) : NULL;
+    if (filename && strstr(filename, "linux-v4l2.so")) {
+        patch_linux_v4l2_memory();
+    }
+    return res;
 }
 
 static const char *get_default_v4l2_device(void) {
@@ -159,6 +226,14 @@ static const char *get_default_v4l2_device(void) {
 static void ensure_video4linux_tree(void) {
     mkdir("/tmp/video4linux-targets", 0755);
     mkdir("/tmp/video4linux", 0755);
+    mkdir("/tmp/v4l", 0755);
+    mkdir("/tmp/v4l/by-id", 0755);
+    mkdir("/tmp/v4l/by-path", 0755);
+
+    mkdir("/dev/v4l", 0755);
+    mkdir("/dev/v4l/by-id", 0755);
+    mkdir("/dev/v4l/by-path", 0755);
+
     for (int i = 0; i < 64; i++) {
         char devpath[32];
         snprintf(devpath, sizeof(devpath), "/dev/video%d", i);
@@ -183,6 +258,22 @@ static void ensure_video4linux_tree(void) {
             }
             unlink(linkpath);
             symlink(targetpath, linkpath);
+
+            char by_id[64], by_path[64];
+            snprintf(by_id, sizeof(by_id), "/tmp/v4l/by-id/usb-xrdp-camera-video%d", i);
+            snprintf(by_path, sizeof(by_path), "/tmp/v4l/by-path/platform-xrdp-camera-video%d", i);
+            unlink(by_id);
+            symlink(devpath, by_id);
+            unlink(by_path);
+            symlink(devpath, by_path);
+
+            char dev_by_id[64], dev_by_path[64];
+            snprintf(dev_by_id, sizeof(dev_by_id), "/dev/v4l/by-id/usb-xrdp-camera-video%d", i);
+            snprintf(dev_by_path, sizeof(dev_by_path), "/dev/v4l/by-path/platform-xrdp-camera-video%d", i);
+            unlink(dev_by_id);
+            symlink(devpath, dev_by_id);
+            unlink(dev_by_path);
+            symlink(devpath, dev_by_path);
         }
     }
 }
@@ -194,6 +285,8 @@ int scandir(const char *dirp,
     if (namelist) {
         *namelist = NULL;
     }
+
+    patch_linux_v4l2_memory();
 
     if (in_shim) {
         if (!real_scandir) {
@@ -213,9 +306,21 @@ int scandir(const char *dirp,
     }
 
     const char *target = dirp;
-    if (dirp && strcmp(dirp, "/sys/class/video4linux") == 0) {
-        ensure_video4linux_tree();
-        target = "/tmp/video4linux";
+    if (dirp) {
+        if (strcmp(dirp, "/sys/class/video4linux") == 0) {
+            ensure_video4linux_tree();
+            target = "/tmp/video4linux";
+        } else if (strncmp(dirp, "/dev/v4l/by-id", 14) == 0) {
+            ensure_video4linux_tree();
+            if (access(dirp, F_OK) != 0) {
+                target = "/tmp/v4l/by-id";
+            }
+        } else if (strncmp(dirp, "/dev/v4l/by-path", 16) == 0) {
+            ensure_video4linux_tree();
+            if (access(dirp, F_OK) != 0) {
+                target = "/tmp/v4l/by-path";
+            }
+        }
     }
 
     int n = 0;
@@ -229,7 +334,9 @@ int scandir(const char *dirp,
     } else if (namelist && *namelist && n > 0) {
         for (int i = 0; i < n; i++) {
             struct dirent *de = (*namelist)[i];
-            if (de && strncmp(de->d_name, "video", 5) == 0) {
+            if (de && (strncmp(de->d_name, "video", 5) == 0 ||
+                       strncmp(de->d_name, "usb-", 4) == 0 ||
+                       strncmp(de->d_name, "platform-", 9) == 0)) {
                 if (de->d_type == DT_DIR || de->d_type == DT_UNKNOWN) {
                     de->d_type = DT_LNK;
                 }
@@ -249,6 +356,8 @@ int scandir64(const char *dirp,
         *namelist = NULL;
     }
 
+    patch_linux_v4l2_memory();
+
     if (in_shim) {
         if (!real_scandir64) {
             real_scandir64 = (int (*)(const char *, struct dirent64 ***,
@@ -267,9 +376,21 @@ int scandir64(const char *dirp,
     }
 
     const char *target = dirp;
-    if (dirp && strcmp(dirp, "/sys/class/video4linux") == 0) {
-        ensure_video4linux_tree();
-        target = "/tmp/video4linux";
+    if (dirp) {
+        if (strcmp(dirp, "/sys/class/video4linux") == 0) {
+            ensure_video4linux_tree();
+            target = "/tmp/video4linux";
+        } else if (strncmp(dirp, "/dev/v4l/by-id", 14) == 0) {
+            ensure_video4linux_tree();
+            if (access(dirp, F_OK) != 0) {
+                target = "/tmp/v4l/by-id";
+            }
+        } else if (strncmp(dirp, "/dev/v4l/by-path", 16) == 0) {
+            ensure_video4linux_tree();
+            if (access(dirp, F_OK) != 0) {
+                target = "/tmp/v4l/by-path";
+            }
+        }
     }
 
     int n = 0;
@@ -283,7 +404,9 @@ int scandir64(const char *dirp,
     } else if (namelist && *namelist && n > 0) {
         for (int i = 0; i < n; i++) {
             struct dirent64 *de = (*namelist)[i];
-            if (de && strncmp(de->d_name, "video", 5) == 0) {
+            if (de && (strncmp(de->d_name, "video", 5) == 0 ||
+                       strncmp(de->d_name, "usb-", 4) == 0 ||
+                       strncmp(de->d_name, "platform-", 9) == 0)) {
                 if (de->d_type == DT_DIR || de->d_type == DT_UNKNOWN) {
                     de->d_type = DT_LNK;
                 }
@@ -300,7 +423,9 @@ struct dirent *readdir(DIR *dirp) {
         real_readdir = (struct dirent *(*)(DIR *))dlsym(RTLD_NEXT, "readdir");
     }
     struct dirent *de = real_readdir ? real_readdir(dirp) : NULL;
-    if (de && strncmp(de->d_name, "video", 5) == 0) {
+    if (de && (strncmp(de->d_name, "video", 5) == 0 ||
+               strncmp(de->d_name, "usb-", 4) == 0 ||
+               strncmp(de->d_name, "platform-", 9) == 0)) {
         if (de->d_type == DT_DIR || de->d_type == DT_UNKNOWN) {
             de->d_type = DT_LNK;
         }
@@ -313,7 +438,9 @@ struct dirent64 *readdir64(DIR *dirp) {
         real_readdir64 = (struct dirent64 *(*)(DIR *))dlsym(RTLD_NEXT, "readdir64");
     }
     struct dirent64 *de = real_readdir64 ? real_readdir64(dirp) : NULL;
-    if (de && strncmp(de->d_name, "video", 5) == 0) {
+    if (de && (strncmp(de->d_name, "video", 5) == 0 ||
+               strncmp(de->d_name, "usb-", 4) == 0 ||
+               strncmp(de->d_name, "platform-", 9) == 0)) {
         if (de->d_type == DT_DIR || de->d_type == DT_UNKNOWN) {
             de->d_type = DT_LNK;
         }
@@ -322,6 +449,8 @@ struct dirent64 *readdir64(DIR *dirp) {
 }
 
 DIR *opendir(const char *name) {
+    patch_linux_v4l2_memory();
+
     if (in_shim) {
         if (!real_opendir) real_opendir = (DIR *(*)(const char *))dlsym(RTLD_NEXT, "opendir");
         return real_opendir ? real_opendir(name) : NULL;
@@ -332,11 +461,23 @@ DIR *opendir(const char *name) {
         real_opendir = (DIR *(*)(const char *))dlsym(RTLD_NEXT, "opendir");
     }
 
-    if (name && strcmp(name, "/sys/class/video4linux") == 0) {
-        ensure_video4linux_tree();
-        DIR *d = real_opendir ? real_opendir("/tmp/video4linux") : NULL;
-        in_shim = 0;
-        return d;
+    if (name) {
+        if (strcmp(name, "/sys/class/video4linux") == 0) {
+            ensure_video4linux_tree();
+            DIR *d = real_opendir ? real_opendir("/tmp/video4linux") : NULL;
+            in_shim = 0;
+            return d;
+        } else if (strncmp(name, "/dev/v4l/by-id", 14) == 0 && access(name, F_OK) != 0) {
+            ensure_video4linux_tree();
+            DIR *d = real_opendir ? real_opendir("/tmp/v4l/by-id") : NULL;
+            in_shim = 0;
+            return d;
+        } else if (strncmp(name, "/dev/v4l/by-path", 16) == 0 && access(name, F_OK) != 0) {
+            ensure_video4linux_tree();
+            DIR *d = real_opendir ? real_opendir("/tmp/v4l/by-path") : NULL;
+            in_shim = 0;
+            return d;
+        }
     }
 
     DIR *d = real_opendir ? real_opendir(name) : NULL;
@@ -355,13 +496,29 @@ char *realpath(const char *path, char *resolved_path) {
         real_realpath = (char *(*)(const char *, char *))dlsym(RTLD_NEXT, "realpath");
     }
 
-    if (path && strncmp(path, "/sys/class/video4linux", 22) == 0) {
-        ensure_video4linux_tree();
-        char redirected[128];
-        snprintf(redirected, sizeof(redirected), "/tmp/video4linux%s", path + 22);
-        char *res = real_realpath ? real_realpath(redirected, resolved_path) : NULL;
-        in_shim = 0;
-        return res;
+    if (path) {
+        if (strncmp(path, "/sys/class/video4linux", 22) == 0) {
+            ensure_video4linux_tree();
+            char redirected[128];
+            snprintf(redirected, sizeof(redirected), "/tmp/video4linux%s", path + 22);
+            char *res = real_realpath ? real_realpath(redirected, resolved_path) : NULL;
+            in_shim = 0;
+            return res;
+        } else if (strncmp(path, "/dev/v4l/by-id/", 15) == 0 && access(path, F_OK) != 0) {
+            ensure_video4linux_tree();
+            char redirected[128];
+            snprintf(redirected, sizeof(redirected), "/tmp/v4l/by-id/%s", path + 15);
+            char *res = real_realpath ? real_realpath(redirected, resolved_path) : NULL;
+            in_shim = 0;
+            return res;
+        } else if (strncmp(path, "/dev/v4l/by-path/", 17) == 0 && access(path, F_OK) != 0) {
+            ensure_video4linux_tree();
+            char redirected[128];
+            snprintf(redirected, sizeof(redirected), "/tmp/v4l/by-path/%s", path + 17);
+            char *res = real_realpath ? real_realpath(redirected, resolved_path) : NULL;
+            in_shim = 0;
+            return res;
+        }
     }
 
     char *res = real_realpath ? real_realpath(path, resolved_path) : NULL;
@@ -380,13 +537,29 @@ int access(const char *pathname, int mode) {
         real_access = (int (*)(const char *, int))dlsym(RTLD_NEXT, "access");
     }
 
-    if (pathname && strncmp(pathname, "/sys/class/video4linux", 22) == 0) {
-        ensure_video4linux_tree();
-        char redirected[128];
-        snprintf(redirected, sizeof(redirected), "/tmp/video4linux%s", pathname + 22);
-        int res = real_access ? real_access(redirected, mode) : -1;
-        in_shim = 0;
-        return res;
+    if (pathname) {
+        if (strncmp(pathname, "/sys/class/video4linux", 22) == 0) {
+            ensure_video4linux_tree();
+            char redirected[128];
+            snprintf(redirected, sizeof(redirected), "/tmp/video4linux%s", pathname + 22);
+            int res = real_access ? real_access(redirected, mode) : -1;
+            in_shim = 0;
+            return res;
+        } else if (strncmp(pathname, "/dev/v4l/by-id/", 15) == 0 && real_access(pathname, mode) != 0) {
+            ensure_video4linux_tree();
+            char redirected[128];
+            snprintf(redirected, sizeof(redirected), "/tmp/v4l/by-id/%s", pathname + 15);
+            int res = real_access ? real_access(redirected, mode) : -1;
+            in_shim = 0;
+            return res;
+        } else if (strncmp(pathname, "/dev/v4l/by-path/", 17) == 0 && real_access(pathname, mode) != 0) {
+            ensure_video4linux_tree();
+            char redirected[128];
+            snprintf(redirected, sizeof(redirected), "/tmp/v4l/by-path/%s", pathname + 17);
+            int res = real_access ? real_access(redirected, mode) : -1;
+            in_shim = 0;
+            return res;
+        }
     }
 
     int res = real_access ? real_access(pathname, mode) : -1;
@@ -405,13 +578,29 @@ FILE *fopen(const char *pathname, const char *mode) {
         real_fopen = (FILE *(*)(const char *, const char *))dlsym(RTLD_NEXT, "fopen");
     }
 
-    if (pathname && strncmp(pathname, "/sys/class/video4linux", 22) == 0) {
-        ensure_video4linux_tree();
-        char redirected[128];
-        snprintf(redirected, sizeof(redirected), "/tmp/video4linux%s", pathname + 22);
-        FILE *f = real_fopen ? real_fopen(redirected, mode) : NULL;
-        in_shim = 0;
-        return f;
+    if (pathname) {
+        if (strncmp(pathname, "/sys/class/video4linux", 22) == 0) {
+            ensure_video4linux_tree();
+            char redirected[128];
+            snprintf(redirected, sizeof(redirected), "/tmp/video4linux%s", pathname + 22);
+            FILE *f = real_fopen ? real_fopen(redirected, mode) : NULL;
+            in_shim = 0;
+            return f;
+        } else if (strncmp(pathname, "/dev/v4l/by-id/", 15) == 0 && access(pathname, F_OK) != 0) {
+            ensure_video4linux_tree();
+            char redirected[128];
+            snprintf(redirected, sizeof(redirected), "/tmp/v4l/by-id/%s", pathname + 15);
+            FILE *f = real_fopen ? real_fopen(redirected, mode) : NULL;
+            in_shim = 0;
+            return f;
+        } else if (strncmp(pathname, "/dev/v4l/by-path/", 17) == 0 && access(pathname, F_OK) != 0) {
+            ensure_video4linux_tree();
+            char redirected[128];
+            snprintf(redirected, sizeof(redirected), "/tmp/v4l/by-path/%s", pathname + 17);
+            FILE *f = real_fopen ? real_fopen(redirected, mode) : NULL;
+            in_shim = 0;
+            return f;
+        }
     }
 
     FILE *f = real_fopen ? real_fopen(pathname, mode) : NULL;
@@ -428,6 +617,8 @@ int v4l2_open(const char *file, int oflag, ...) {
         va_end(ap);
     }
 
+    patch_linux_v4l2_memory();
+
     if (!real_v4l2_open) {
         real_v4l2_open = (int (*)(const char *, int, ...))dlsym(RTLD_NEXT, "v4l2_open");
         if (!real_v4l2_open) {
@@ -437,7 +628,16 @@ int v4l2_open(const char *file, int oflag, ...) {
     }
 
     const char *target = file;
-    if (!target || target[0] == '\0') {
+    char redirected[128];
+    if (file && strncmp(file, "/dev/v4l/by-id/", 15) == 0 && access(file, F_OK) != 0) {
+        ensure_video4linux_tree();
+        snprintf(redirected, sizeof(redirected), "/tmp/v4l/by-id/%s", file + 15);
+        target = redirected;
+    } else if (file && strncmp(file, "/dev/v4l/by-path/", 17) == 0 && access(file, F_OK) != 0) {
+        ensure_video4linux_tree();
+        snprintf(redirected, sizeof(redirected), "/tmp/v4l/by-path/%s", file + 17);
+        target = redirected;
+    } else if (!target || target[0] == '\0') {
         target = get_default_v4l2_device();
     }
 

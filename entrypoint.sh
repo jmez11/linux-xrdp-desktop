@@ -98,6 +98,17 @@ fi
 printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$USERNAME" > "/etc/sudoers.d/90-$USERNAME"
 chmod 0440 "/etc/sudoers.d/90-$USERNAME"
 
+# Ensure /dev/v4l/by-id and /dev/v4l/by-path exist with open permissions for camera discovery
+mkdir -p /dev/v4l/by-id /dev/v4l/by-path 2>/dev/null || true
+chmod -R 777 /dev/v4l 2>/dev/null || true
+for dev in /dev/video*; do
+    if [ -e "$dev" ]; then
+        idx="${dev#/dev/video}"
+        ln -sf "$dev" "/dev/v4l/by-id/usb-xrdp-camera-video$idx" 2>/dev/null || true
+        ln -sf "$dev" "/dev/v4l/by-path/platform-xrdp-camera-video$idx" 2>/dev/null || true
+    fi
+done
+
 # Ensure XDG_RUNTIME_DIR (/run/user/$UID) exists for PipeWire and XDG portals
 # (Docker does not run systemd-logind, so /run/user/$UID is not created automatically)
 USER_UID=$(id -u "$USERNAME")

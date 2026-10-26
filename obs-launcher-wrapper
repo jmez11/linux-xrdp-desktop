@@ -19,6 +19,16 @@ if [ -e /dev/video0 ]; then
         fi
         sleep 0.1
     done
+
+    # Ensure /dev/v4l directories and persistent symlinks exist
+    mkdir -p /dev/v4l/by-id /dev/v4l/by-path 2>/dev/null || true
+    for dev in /dev/video*; do
+        if [ -e "$dev" ]; then
+            idx="${dev#/dev/video}"
+            ln -sf "$dev" "/dev/v4l/by-id/usb-xrdp-camera-video$idx" 2>/dev/null || true
+            ln -sf "$dev" "/dev/v4l/by-path/platform-xrdp-camera-video$idx" 2>/dev/null || true
+        fi
+    done
 fi
 
 # 2. Deploy default working scene with /dev/video0 if scenes directory is missing or empty
