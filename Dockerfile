@@ -314,6 +314,7 @@ COPY UserDetailsPage.qml /usr/share/kpackage/kcms/kcm_users/contents/ui/UserDeta
 RUN chmod +x /usr/local/bin/xrdp-drives-sync.py /usr/local/bin/xrdp-deb-installer.sh /usr/local/bin/xrdp-dock-helper.py /usr/local/bin/xrdp-timedate-daemon.py /usr/local/bin/vscode-launch /usr/local/bin/xrdp-camera-portal-setup.py /usr/local/bin/chromium-browser-wrapper /usr/local/bin/xrdp-patch-browser-launchers.sh /usr/local/bin/xrdp-v4l2-bridge.py /usr/local/bin/zoom-launcher-wrapper /usr/local/bin/obs-launcher-wrapper \
     && ln -sf /usr/local/bin/zoom-launcher-wrapper /usr/local/bin/zoom \
     && ln -sf /usr/local/bin/obs-launcher-wrapper /usr/local/bin/obs \
+    && (if [ -f /usr/bin/obs ] && [ ! -L /usr/bin/obs ]; then mv /usr/bin/obs /usr/bin/obs.real && ln -sf /usr/local/bin/obs-launcher-wrapper /usr/bin/obs; fi) \
     && ln -sf /usr/local/bin/chromium-browser-wrapper /usr/local/bin/microsoft-edge \
     && ln -sf /usr/local/bin/chromium-browser-wrapper /usr/local/bin/microsoft-edge-stable \
     && ln -sf /usr/local/bin/chromium-browser-wrapper /usr/local/bin/google-chrome \

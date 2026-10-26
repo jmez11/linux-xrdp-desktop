@@ -10,8 +10,10 @@
 #include <signal.h>
 #include <execinfo.h>
 #include <stdint.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
 #include <linux/videodev2.h>
 
 /*
@@ -29,19 +31,20 @@
  *    defaults to the first accessible /dev/video* node rather than failing or aborting.
  *
  * 3. Control query safety (VIDIOC_QUERYCTRL / VIDIOC_QUERYMENU):
- *    On loopback or virtual V4L2 devices, menu controls often report step = 0.
- *    OBS's v4l2-controls iterates with `index += qctrl->step`, causing an infinite
- *    loop and memory exhaustion. v4l2_ioctl intercepts control queries to ensure
- *    step >= 1 and strings are null-terminated.
+ *    On loopback or virtual V4L2 devices, menu controls often report step = 0 or
+ *    trigger infinite iterations. v4l2_ioctl / ioctl intercept control queries to ensure
+ *    step >= 1, bounds are safe, and strings are null-terminated.
  *
  * 4. Crash diagnostics:
- *    Captures SIGSEGV / SIGABRT / SIGBUS / SIGFPE and dumps a full stack backtrace
- *    to stderr and /tmp/obs-crash.log before passing the signal to the default handler.
+ *    Captures SIGSEGV / SIGABRT / SIGBUS / SIGFPE / SIGILL and dumps a full stack backtrace
+ *    to stderr and /tmp/obs-crash.log using async-signal-safe I/O before passing the signal
+ *    to the default handler.
  */
 
 static DIR *(*real_opendir)(const char *name) = NULL;
 static struct dirent *(*real_readdir)(DIR *dirp) = NULL;
-static struct dirent *(*real_readdir64)(DIR *dirp) = NULL;
+static struct dirent64 *(*real_readdir64)(DIR *dirp) = NULL;
+static int (*real_ioctl)(int fd, unsigned long int request, ...) = NULL;
 static int (*real_v4l2_open)(const char *file, int oflag, ...) = NULL;
 static int (*real_v4l2_close)(int fd) = NULL;
 static int (*real_v4l2_ioctl)(int fd, unsigned long int request, ...) = NULL;
@@ -61,12 +64,14 @@ static void crash_handler(int sig, siginfo_t *info, void *ucontext) {
     fprintf(stderr, "=================================================================\n\n");
     fflush(stderr);
 
-    FILE *f = fopen("/tmp/obs-crash.log", "w");
-    if (f) {
-        fprintf(f, "OBS Crash Signal %d: %s\n", sig, strsignal(sig));
-        if (info) fprintf(f, "Fault Address: %p, Signal Code: %d\n", info->si_addr, info->si_code);
-        backtrace_symbols_fd(frames, n, fileno(f));
-        fclose(f);
+    int fd = open("/tmp/obs-crash.log", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (fd >= 0) {
+        char buf[256];
+        int len = snprintf(buf, sizeof(buf), "OBS Crash Signal %d: %s\nFault Address: %p, Signal Code: %d\nCall Stack:\n",
+                           sig, strsignal(sig), info ? info->si_addr : NULL, info ? info->si_code : 0);
+        if (len > 0) write(fd, buf, len);
+        backtrace_symbols_fd(frames, n, fd);
+        close(fd);
     }
 
     signal(sig, SIG_DFL);
@@ -91,20 +96,20 @@ __attribute__((constructor))
 static void init_shim(void) {
     install_crash_handlers();
 
-    real_opendir = dlsym(RTLD_NEXT, "opendir");
-    real_readdir = dlsym(RTLD_NEXT, "readdir");
-    real_readdir64 = dlsym(RTLD_NEXT, "readdir64");
-    if (!real_readdir64) real_readdir64 = real_readdir;
+    real_opendir = (DIR *(*)(const char *))dlsym(RTLD_NEXT, "opendir");
+    real_readdir = (struct dirent *(*)(DIR *))dlsym(RTLD_NEXT, "readdir");
+    real_readdir64 = (struct dirent64 *(*)(DIR *))dlsym(RTLD_NEXT, "readdir64");
+    real_ioctl = (int (*)(int, unsigned long int, ...))dlsym(RTLD_NEXT, "ioctl");
 
-    real_v4l2_open = dlsym(RTLD_NEXT, "v4l2_open");
-    real_v4l2_close = dlsym(RTLD_NEXT, "v4l2_close");
-    real_v4l2_ioctl = dlsym(RTLD_NEXT, "v4l2_ioctl");
+    real_v4l2_open = (int (*)(const char *, int, ...))dlsym(RTLD_NEXT, "v4l2_open");
+    real_v4l2_close = (int (*)(int))dlsym(RTLD_NEXT, "v4l2_close");
+    real_v4l2_ioctl = (int (*)(int, unsigned long int, ...))dlsym(RTLD_NEXT, "v4l2_ioctl");
 
     void *h = dlopen("libv4l2.so.0", RTLD_LAZY);
     if (h) {
-        if (!real_v4l2_open) real_v4l2_open = dlsym(h, "v4l2_open");
-        if (!real_v4l2_close) real_v4l2_close = dlsym(h, "v4l2_close");
-        if (!real_v4l2_ioctl) real_v4l2_ioctl = dlsym(h, "v4l2_ioctl");
+        if (!real_v4l2_open) real_v4l2_open = (int (*)(const char *, int, ...))dlsym(h, "v4l2_open");
+        if (!real_v4l2_close) real_v4l2_close = (int (*)(int))dlsym(h, "v4l2_close");
+        if (!real_v4l2_ioctl) real_v4l2_ioctl = (int (*)(int, unsigned long int, ...))dlsym(h, "v4l2_ioctl");
     }
 
     fprintf(stderr, "[libobs-v4l2-shim] Compatibility shim initialized successfully\n");
@@ -126,7 +131,11 @@ static const char *get_default_v4l2_device(void) {
     return "/dev/video0";
 }
 
-static struct dirent *patch_dirent(struct dirent *de) {
+struct dirent *readdir(DIR *dirp) {
+    if (!real_readdir) {
+        real_readdir = (struct dirent *(*)(DIR *))dlsym(RTLD_NEXT, "readdir");
+    }
+    struct dirent *de = real_readdir ? real_readdir(dirp) : NULL;
     if (de && strncmp(de->d_name, "video", 5) == 0) {
         if (de->d_type == DT_DIR || de->d_type == DT_UNKNOWN) {
             de->d_type = DT_LNK;
@@ -135,24 +144,22 @@ static struct dirent *patch_dirent(struct dirent *de) {
     return de;
 }
 
-struct dirent *readdir(DIR *dirp) {
-    if (!real_readdir) {
-        real_readdir = dlsym(RTLD_NEXT, "readdir");
-    }
-    return patch_dirent(real_readdir ? real_readdir(dirp) : NULL);
-}
-
-struct dirent *readdir64(DIR *dirp) {
+struct dirent64 *readdir64(DIR *dirp) {
     if (!real_readdir64) {
-        real_readdir64 = dlsym(RTLD_NEXT, "readdir64");
-        if (!real_readdir64) real_readdir64 = real_readdir;
+        real_readdir64 = (struct dirent64 *(*)(DIR *))dlsym(RTLD_NEXT, "readdir64");
     }
-    return patch_dirent(real_readdir64 ? real_readdir64(dirp) : NULL);
+    struct dirent64 *de = real_readdir64 ? real_readdir64(dirp) : NULL;
+    if (de && strncmp(de->d_name, "video", 5) == 0) {
+        if (de->d_type == DT_DIR || de->d_type == DT_UNKNOWN) {
+            de->d_type = DT_LNK;
+        }
+    }
+    return de;
 }
 
 DIR *opendir(const char *name) {
     if (!real_opendir) {
-        real_opendir = dlsym(RTLD_NEXT, "opendir");
+        real_opendir = (DIR *(*)(const char *))dlsym(RTLD_NEXT, "opendir");
     }
 
     if (name && strcmp(name, "/sys/class/video4linux") == 0) {
@@ -217,10 +224,10 @@ int v4l2_open(const char *file, int oflag, ...) {
     }
 
     if (!real_v4l2_open) {
-        real_v4l2_open = dlsym(RTLD_NEXT, "v4l2_open");
+        real_v4l2_open = (int (*)(const char *, int, ...))dlsym(RTLD_NEXT, "v4l2_open");
         if (!real_v4l2_open) {
             void *h = dlopen("libv4l2.so.0", RTLD_LAZY);
-            if (h) real_v4l2_open = dlsym(h, "v4l2_open");
+            if (h) real_v4l2_open = (int (*)(const char *, int, ...))dlsym(h, "v4l2_open");
         }
     }
 
@@ -230,7 +237,7 @@ int v4l2_open(const char *file, int oflag, ...) {
     }
 
     if (!real_v4l2_open) {
-        return -1;
+        return open(target, oflag, mode);
     }
     int fd = real_v4l2_open(target, oflag, mode);
     fprintf(stderr, "[libobs-v4l2-shim] v4l2_open(\"%s\", oflag=0x%x) = %d\n", target ? target : "(null)", oflag, fd);
@@ -239,14 +246,59 @@ int v4l2_open(const char *file, int oflag, ...) {
 
 int v4l2_close(int fd) {
     if (!real_v4l2_close) {
-        real_v4l2_close = dlsym(RTLD_NEXT, "v4l2_close");
+        real_v4l2_close = (int (*)(int))dlsym(RTLD_NEXT, "v4l2_close");
         if (!real_v4l2_close) {
             void *h = dlopen("libv4l2.so.0", RTLD_LAZY);
-            if (h) real_v4l2_close = dlsym(h, "v4l2_close");
+            if (h) real_v4l2_close = (int (*)(int))dlsym(h, "v4l2_close");
         }
     }
     fprintf(stderr, "[libobs-v4l2-shim] v4l2_close(%d)\n", fd);
     return real_v4l2_close ? real_v4l2_close(fd) : close(fd);
+}
+
+static int handle_v4l2_ioctl_result(int fd, unsigned long int request, void *arg, int ret) {
+    (void)fd;
+    if (!arg) return ret;
+
+    if (request == VIDIOC_QUERYCTRL && ret == 0) {
+        struct v4l2_queryctrl *qc = (struct v4l2_queryctrl *)arg;
+        if (qc->step == 0) {
+            qc->step = 1;
+        }
+        if (qc->maximum < qc->minimum) {
+            qc->maximum = qc->minimum;
+        }
+        if (qc->type == V4L2_CTRL_TYPE_MENU && (qc->maximum - qc->minimum) > 256) {
+            qc->maximum = qc->minimum + 256;
+        }
+        qc->name[sizeof(qc->name) - 1] = '\0';
+    } else if (request == VIDIOC_QUERYMENU && ret == 0) {
+        struct v4l2_querymenu *qm = (struct v4l2_querymenu *)arg;
+        qm->name[sizeof(qm->name) - 1] = '\0';
+    } else if (request == VIDIOC_ENUM_FRAMEINTERVALS) {
+        struct v4l2_frmivalenum *fi = (struct v4l2_frmivalenum *)arg;
+        if (ret != 0) {
+            fi->type = 0;
+        } else if (fi->type == V4L2_FRMIVAL_TYPE_DISCRETE) {
+            if (fi->discrete.numerator == 0) fi->discrete.numerator = 1;
+            if (fi->discrete.denominator == 0) fi->discrete.denominator = 30;
+        }
+    } else if (request == VIDIOC_ENUM_FRAMESIZES) {
+        struct v4l2_frmsizeenum *fs = (struct v4l2_frmsizeenum *)arg;
+        if (ret != 0) {
+            fs->type = 0;
+        } else if (fs->type == V4L2_FRMSIZE_TYPE_DISCRETE) {
+            if (fs->discrete.width == 0) fs->discrete.width = 1920;
+            if (fs->discrete.height == 0) fs->discrete.height = 1080;
+        }
+    } else if (request == VIDIOC_QUERYCAP && ret == 0) {
+        struct v4l2_capability *cap = (struct v4l2_capability *)arg;
+        cap->driver[sizeof(cap->driver) - 1] = '\0';
+        cap->card[sizeof(cap->card) - 1] = '\0';
+        cap->bus_info[sizeof(cap->bus_info) - 1] = '\0';
+    }
+
+    return ret;
 }
 
 int v4l2_ioctl(int fd, unsigned long int request, ...) {
@@ -256,34 +308,36 @@ int v4l2_ioctl(int fd, unsigned long int request, ...) {
     va_end(ap);
 
     if (!real_v4l2_ioctl) {
-        real_v4l2_ioctl = dlsym(RTLD_NEXT, "v4l2_ioctl");
+        real_v4l2_ioctl = (int (*)(int, unsigned long int, ...))dlsym(RTLD_NEXT, "v4l2_ioctl");
         if (!real_v4l2_ioctl) {
             void *h = dlopen("libv4l2.so.0", RTLD_LAZY);
-            if (h) real_v4l2_ioctl = dlsym(h, "v4l2_ioctl");
+            if (h) real_v4l2_ioctl = (int (*)(int, unsigned long int, ...))dlsym(h, "v4l2_ioctl");
         }
     }
-    if (!real_v4l2_ioctl) {
+
+    int ret;
+    if (real_v4l2_ioctl) {
+        ret = real_v4l2_ioctl(fd, request, arg);
+    } else {
+        ret = ioctl(fd, request, arg);
+    }
+
+    return handle_v4l2_ioctl_result(fd, request, arg, ret);
+}
+
+int ioctl(int fd, unsigned long int request, ...) {
+    va_list ap;
+    va_start(ap, request);
+    void *arg = va_arg(ap, void *);
+    va_end(ap);
+
+    if (!real_ioctl) {
+        real_ioctl = (int (*)(int, unsigned long int, ...))dlsym(RTLD_NEXT, "ioctl");
+    }
+    if (!real_ioctl) {
         return -1;
     }
 
-    int ret = real_v4l2_ioctl(fd, request, arg);
-
-    if (request == VIDIOC_QUERYCTRL && ret == 0 && arg) {
-        struct v4l2_queryctrl *qc = (struct v4l2_queryctrl *)arg;
-        if (qc->step == 0) {
-            qc->step = 1;
-        }
-        qc->name[sizeof(qc->name) - 1] = '\0';
-    } else if (request == VIDIOC_QUERYMENU && ret == 0 && arg) {
-        struct v4l2_querymenu *qm = (struct v4l2_querymenu *)arg;
-        qm->name[sizeof(qm->name) - 1] = '\0';
-    } else if (request == VIDIOC_ENUM_FRAMEINTERVALS && ret != 0 && arg) {
-        struct v4l2_frmivalenum *fi = (struct v4l2_frmivalenum *)arg;
-        fi->type = 0;
-    } else if (request == VIDIOC_ENUM_FRAMESIZES && ret != 0 && arg) {
-        struct v4l2_frmsizeenum *fs = (struct v4l2_frmsizeenum *)arg;
-        fs->type = 0;
-    }
-
-    return ret;
+    int ret = real_ioctl(fd, request, arg);
+    return handle_v4l2_ioctl_result(fd, request, arg, ret);
 }

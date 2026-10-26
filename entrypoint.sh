@@ -201,6 +201,10 @@ exec dbus-launch --exit-with-session bash -c '
     /usr/libexec/xdg-desktop-portal >/dev/null 2>&1 &
     /usr/local/bin/xrdp-camera-portal-setup.py >/dev/null 2>&1 &
     /usr/local/bin/xrdp-patch-browser-launchers.sh >/dev/null 2>&1 &
+    if [ -f /usr/bin/obs ] && [ ! -L /usr/bin/obs ]; then
+        mv /usr/bin/obs /usr/bin/obs.real 2>/dev/null || true
+        ln -sf /usr/local/bin/obs-launcher-wrapper /usr/bin/obs 2>/dev/null || true
+    fi
     if [ -x /usr/local/bin/xrdp-v4l2-bridge.py ] && [ -e /dev/video0 ]; then
         /usr/local/bin/xrdp-v4l2-bridge.py >/dev/null 2>&1 &
     fi

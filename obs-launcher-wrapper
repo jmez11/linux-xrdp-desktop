@@ -127,7 +127,9 @@ fi
 
 # 4. Locate and execute the real OBS executable
 REAL_OBS=""
-if [ -x /usr/bin/obs ]; then
+if [ -x /usr/bin/obs.real ]; then
+    REAL_OBS="/usr/bin/obs.real"
+elif [ -x /usr/bin/obs ] && [ ! -L /usr/bin/obs ]; then
     REAL_OBS="/usr/bin/obs"
 elif [ -x /usr/bin/obs64 ]; then
     REAL_OBS="/usr/bin/obs64"
