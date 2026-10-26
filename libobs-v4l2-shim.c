@@ -20,11 +20,14 @@
  * libobs-v4l2-shim:
  * Compatibility shim and diagnostics for OBS Studio running inside Docker / XRDP.
  *
- * 1. sysfs emulation and readdir d_type:
- *    OBS Studio enumerates video devices by scanning /sys/class/video4linux and
- *    skips any entry where d_type == DT_DIR. In container environments where video
- *    nodes are synthesized as directories or over tmpfs, readdir/readdir64 are patched
- *    to return d_type = DT_LNK so OBS discovers all active /dev/video* devices.
+ * 1. sysfs emulation, scandir, and readdir:
+ *    OBS Studio enumerates video devices by calling scandir() on /sys/class/video4linux
+ *    and skips any entry where d_type == DT_DIR. In container environments where sysfs
+ *    is read-only or video4linux is missing, scandir returns -1, causing OBS to invoke
+ *    free() on an uninitialized stack pointer and abort (SIGABRT).
+ *    scandir/scandir64, opendir, readdir/readdir64, realpath, access, and fopen intercept
+ *    /sys/class/video4linux and redirect to a synthesized /tmp/video4linux populated with
+ *    active /dev/video* devices with d_type = DT_LNK and guaranteed *namelist = NULL on error.
  *
  * 2. Empty device_id safety:
  *    When a source is created or queried without an explicit device_id, v4l2_open()
@@ -41,9 +44,22 @@
  *    to the default handler.
  */
 
+static __thread int in_shim = 0;
+
 static DIR *(*real_opendir)(const char *name) = NULL;
 static struct dirent *(*real_readdir)(DIR *dirp) = NULL;
 static struct dirent64 *(*real_readdir64)(DIR *dirp) = NULL;
+static int (*real_scandir)(const char *dirp,
+                           struct dirent ***namelist,
+                           int (*filter)(const struct dirent *),
+                           int (*compar)(const struct dirent **, const struct dirent **)) = NULL;
+static int (*real_scandir64)(const char *dirp,
+                             struct dirent64 ***namelist,
+                             int (*filter)(const struct dirent64 *),
+                             int (*compar)(const struct dirent64 **, const struct dirent64 **)) = NULL;
+static char *(*real_realpath)(const char *path, char *resolved_path) = NULL;
+static int (*real_access)(const char *pathname, int mode) = NULL;
+static FILE *(*real_fopen)(const char *pathname, const char *mode) = NULL;
 static int (*real_ioctl)(int fd, unsigned long int request, ...) = NULL;
 static int (*real_v4l2_open)(const char *file, int oflag, ...) = NULL;
 static int (*real_v4l2_close)(int fd) = NULL;
@@ -99,6 +115,15 @@ static void init_shim(void) {
     real_opendir = (DIR *(*)(const char *))dlsym(RTLD_NEXT, "opendir");
     real_readdir = (struct dirent *(*)(DIR *))dlsym(RTLD_NEXT, "readdir");
     real_readdir64 = (struct dirent64 *(*)(DIR *))dlsym(RTLD_NEXT, "readdir64");
+    real_scandir = (int (*)(const char *, struct dirent ***,
+                            int (*)(const struct dirent *),
+                            int (*)(const struct dirent **, const struct dirent **)))dlsym(RTLD_NEXT, "scandir");
+    real_scandir64 = (int (*)(const char *, struct dirent64 ***,
+                              int (*)(const struct dirent64 *),
+                              int (*)(const struct dirent64 **, const struct dirent64 **)))dlsym(RTLD_NEXT, "scandir64");
+    real_realpath = (char *(*)(const char *, char *))dlsym(RTLD_NEXT, "realpath");
+    real_access = (int (*)(const char *, int))dlsym(RTLD_NEXT, "access");
+    real_fopen = (FILE *(*)(const char *, const char *))dlsym(RTLD_NEXT, "fopen");
     real_ioctl = (int (*)(int, unsigned long int, ...))dlsym(RTLD_NEXT, "ioctl");
 
     real_v4l2_open = (int (*)(const char *, int, ...))dlsym(RTLD_NEXT, "v4l2_open");
@@ -131,6 +156,145 @@ static const char *get_default_v4l2_device(void) {
     return "/dev/video0";
 }
 
+static void ensure_video4linux_tree(void) {
+    mkdir("/tmp/video4linux-targets", 0755);
+    mkdir("/tmp/video4linux", 0755);
+    for (int i = 0; i < 64; i++) {
+        char devpath[32];
+        snprintf(devpath, sizeof(devpath), "/dev/video%d", i);
+        if (access(devpath, F_OK) == 0) {
+            char targetpath[64], linkpath[64];
+            snprintf(targetpath, sizeof(targetpath), "/tmp/video4linux-targets/video%d", i);
+            snprintf(linkpath, sizeof(linkpath), "/tmp/video4linux/video%d", i);
+            mkdir(targetpath, 0755);
+            char namepath[80];
+            snprintf(namepath, sizeof(namepath), "%s/name", targetpath);
+            FILE *nf = fopen(namepath, "w");
+            if (nf) {
+                fprintf(nf, "XRDP Camera %d\n", i);
+                fclose(nf);
+            }
+            char idxpath[80];
+            snprintf(idxpath, sizeof(idxpath), "%s/index", targetpath);
+            FILE *ifile = fopen(idxpath, "w");
+            if (ifile) {
+                fprintf(ifile, "%d\n", i);
+                fclose(ifile);
+            }
+            unlink(linkpath);
+            symlink(targetpath, linkpath);
+        }
+    }
+}
+
+int scandir(const char *dirp,
+            struct dirent ***namelist,
+            int (*filter)(const struct dirent *),
+            int (*compar)(const struct dirent **, const struct dirent **)) {
+    if (namelist) {
+        *namelist = NULL;
+    }
+
+    if (in_shim) {
+        if (!real_scandir) {
+            real_scandir = (int (*)(const char *, struct dirent ***,
+                                    int (*)(const struct dirent *),
+                                    int (*)(const struct dirent **, const struct dirent **)))dlsym(RTLD_NEXT, "scandir");
+        }
+        return real_scandir ? real_scandir(dirp, namelist, filter, compar) : -1;
+    }
+
+    in_shim = 1;
+
+    if (!real_scandir) {
+        real_scandir = (int (*)(const char *, struct dirent ***,
+                                int (*)(const struct dirent *),
+                                int (*)(const struct dirent **, const struct dirent **)))dlsym(RTLD_NEXT, "scandir");
+    }
+
+    const char *target = dirp;
+    if (dirp && strcmp(dirp, "/sys/class/video4linux") == 0) {
+        ensure_video4linux_tree();
+        target = "/tmp/video4linux";
+    }
+
+    int n = 0;
+    if (real_scandir) {
+        n = real_scandir(target, namelist, filter, compar);
+    }
+
+    if (n < 0) {
+        if (namelist) *namelist = NULL;
+        n = 0;
+    } else if (namelist && *namelist && n > 0) {
+        for (int i = 0; i < n; i++) {
+            struct dirent *de = (*namelist)[i];
+            if (de && strncmp(de->d_name, "video", 5) == 0) {
+                if (de->d_type == DT_DIR || de->d_type == DT_UNKNOWN) {
+                    de->d_type = DT_LNK;
+                }
+            }
+        }
+    }
+
+    in_shim = 0;
+    return n;
+}
+
+int scandir64(const char *dirp,
+              struct dirent64 ***namelist,
+              int (*filter)(const struct dirent64 *),
+              int (*compar)(const struct dirent64 **, const struct dirent64 **)) {
+    if (namelist) {
+        *namelist = NULL;
+    }
+
+    if (in_shim) {
+        if (!real_scandir64) {
+            real_scandir64 = (int (*)(const char *, struct dirent64 ***,
+                                      int (*)(const struct dirent64 *),
+                                      int (*)(const struct dirent64 **, const struct dirent64 **)))dlsym(RTLD_NEXT, "scandir64");
+        }
+        return real_scandir64 ? real_scandir64(dirp, namelist, filter, compar) : -1;
+    }
+
+    in_shim = 1;
+
+    if (!real_scandir64) {
+        real_scandir64 = (int (*)(const char *, struct dirent64 ***,
+                                  int (*)(const struct dirent64 *),
+                                  int (*)(const struct dirent64 **, const struct dirent64 **)))dlsym(RTLD_NEXT, "scandir64");
+    }
+
+    const char *target = dirp;
+    if (dirp && strcmp(dirp, "/sys/class/video4linux") == 0) {
+        ensure_video4linux_tree();
+        target = "/tmp/video4linux";
+    }
+
+    int n = 0;
+    if (real_scandir64) {
+        n = real_scandir64(target, namelist, filter, compar);
+    }
+
+    if (n < 0) {
+        if (namelist) *namelist = NULL;
+        n = 0;
+    } else if (namelist && *namelist && n > 0) {
+        for (int i = 0; i < n; i++) {
+            struct dirent64 *de = (*namelist)[i];
+            if (de && strncmp(de->d_name, "video", 5) == 0) {
+                if (de->d_type == DT_DIR || de->d_type == DT_UNKNOWN) {
+                    de->d_type = DT_LNK;
+                }
+            }
+        }
+    }
+
+    in_shim = 0;
+    return n;
+}
+
 struct dirent *readdir(DIR *dirp) {
     if (!real_readdir) {
         real_readdir = (struct dirent *(*)(DIR *))dlsym(RTLD_NEXT, "readdir");
@@ -158,60 +322,101 @@ struct dirent64 *readdir64(DIR *dirp) {
 }
 
 DIR *opendir(const char *name) {
+    if (in_shim) {
+        if (!real_opendir) real_opendir = (DIR *(*)(const char *))dlsym(RTLD_NEXT, "opendir");
+        return real_opendir ? real_opendir(name) : NULL;
+    }
+
+    in_shim = 1;
     if (!real_opendir) {
         real_opendir = (DIR *(*)(const char *))dlsym(RTLD_NEXT, "opendir");
     }
 
     if (name && strcmp(name, "/sys/class/video4linux") == 0) {
-        DIR *d = real_opendir ? real_opendir(name) : NULL;
-        if (d) {
-            struct dirent *de;
-            int count = 0;
-            while ((de = readdir(d)) != NULL) {
-                if (strncmp(de->d_name, "video", 5) == 0) {
-                    count++;
-                }
-            }
-            rewinddir(d);
-            if (count > 0) {
-                return d;
-            }
-            closedir(d);
-        }
-
-        /* Real /sys/class/video4linux is absent or has no entries; synthesize in /tmp/video4linux */
-        mkdir("/tmp/video4linux-targets", 0755);
-        mkdir("/tmp/video4linux", 0755);
-        for (int i = 0; i < 64; i++) {
-            char devpath[32];
-            snprintf(devpath, sizeof(devpath), "/dev/video%d", i);
-            if (access(devpath, F_OK) == 0) {
-                char targetpath[64], linkpath[64];
-                snprintf(targetpath, sizeof(targetpath), "/tmp/video4linux-targets/video%d", i);
-                snprintf(linkpath, sizeof(linkpath), "/tmp/video4linux/video%d", i);
-                mkdir(targetpath, 0755);
-                char namepath[80];
-                snprintf(namepath, sizeof(namepath), "%s/name", targetpath);
-                FILE *nf = fopen(namepath, "w");
-                if (nf) {
-                    fprintf(nf, "XRDP Camera %d\n", i);
-                    fclose(nf);
-                }
-                char idxpath[80];
-                snprintf(idxpath, sizeof(idxpath), "%s/index", targetpath);
-                FILE *ifile = fopen(idxpath, "w");
-                if (ifile) {
-                    fprintf(ifile, "%d\n", i);
-                    fclose(ifile);
-                }
-                unlink(linkpath);
-                symlink(targetpath, linkpath);
-            }
-        }
-        return real_opendir ? real_opendir("/tmp/video4linux") : NULL;
+        ensure_video4linux_tree();
+        DIR *d = real_opendir ? real_opendir("/tmp/video4linux") : NULL;
+        in_shim = 0;
+        return d;
     }
 
-    return real_opendir ? real_opendir(name) : NULL;
+    DIR *d = real_opendir ? real_opendir(name) : NULL;
+    in_shim = 0;
+    return d;
+}
+
+char *realpath(const char *path, char *resolved_path) {
+    if (in_shim) {
+        if (!real_realpath) real_realpath = (char *(*)(const char *, char *))dlsym(RTLD_NEXT, "realpath");
+        return real_realpath ? real_realpath(path, resolved_path) : NULL;
+    }
+
+    in_shim = 1;
+    if (!real_realpath) {
+        real_realpath = (char *(*)(const char *, char *))dlsym(RTLD_NEXT, "realpath");
+    }
+
+    if (path && strncmp(path, "/sys/class/video4linux", 22) == 0) {
+        ensure_video4linux_tree();
+        char redirected[128];
+        snprintf(redirected, sizeof(redirected), "/tmp/video4linux%s", path + 22);
+        char *res = real_realpath ? real_realpath(redirected, resolved_path) : NULL;
+        in_shim = 0;
+        return res;
+    }
+
+    char *res = real_realpath ? real_realpath(path, resolved_path) : NULL;
+    in_shim = 0;
+    return res;
+}
+
+int access(const char *pathname, int mode) {
+    if (in_shim) {
+        if (!real_access) real_access = (int (*)(const char *, int))dlsym(RTLD_NEXT, "access");
+        return real_access ? real_access(pathname, mode) : -1;
+    }
+
+    in_shim = 1;
+    if (!real_access) {
+        real_access = (int (*)(const char *, int))dlsym(RTLD_NEXT, "access");
+    }
+
+    if (pathname && strncmp(pathname, "/sys/class/video4linux", 22) == 0) {
+        ensure_video4linux_tree();
+        char redirected[128];
+        snprintf(redirected, sizeof(redirected), "/tmp/video4linux%s", pathname + 22);
+        int res = real_access ? real_access(redirected, mode) : -1;
+        in_shim = 0;
+        return res;
+    }
+
+    int res = real_access ? real_access(pathname, mode) : -1;
+    in_shim = 0;
+    return res;
+}
+
+FILE *fopen(const char *pathname, const char *mode) {
+    if (in_shim) {
+        if (!real_fopen) real_fopen = (FILE *(*)(const char *, const char *))dlsym(RTLD_NEXT, "fopen");
+        return real_fopen ? real_fopen(pathname, mode) : NULL;
+    }
+
+    in_shim = 1;
+    if (!real_fopen) {
+        real_fopen = (FILE *(*)(const char *, const char *))dlsym(RTLD_NEXT, "fopen");
+    }
+
+    if (pathname && strncmp(pathname, "/sys/class/video4linux", 22) == 0) {
+        ensure_video4linux_tree();
+        char redirected[128];
+        snprintf(redirected, sizeof(redirected), "/tmp/video4linux%s", pathname + 22);
+        FILE *f = real_fopen ? real_fopen(redirected, mode) : NULL;
+        in_shim = 0;
+        return f;
+    }
+
+    FILE *f = real_fopen ? real_fopen(pathname, mode) : NULL;
+    in_shim = 0;
+    return f;
 }
 
 int v4l2_open(const char *file, int oflag, ...) {
