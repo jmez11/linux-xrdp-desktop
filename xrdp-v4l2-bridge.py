@@ -41,6 +41,7 @@ V4L2_APP_NAMES = {
     "zoom-client",
     "us.zoom.zoom",
     "obs",
+    "obs.real",
     "obs64",
     "cheese",
     "vlc",
@@ -108,10 +109,10 @@ def get_pipewire_cameras():
     return cameras
 
 
-def is_v4l2_app_running():
+def is_v4l2_app_running(exclude_pids=None):
     """Checks if any known standalone V4L2 video app is currently running in the session."""
-    if os.path.exists(WAKE_FILE):
-        return True
+    if exclude_pids is None:
+        exclude_pids = set()
 
     try:
         pids = [p for p in os.listdir("/proc") if p.isdigit()]
@@ -119,18 +120,13 @@ def is_v4l2_app_running():
         return False
 
     for pid_str in pids:
+        pid = int(pid_str)
+        if pid in exclude_pids or pid == os.getpid():
+            continue
         try:
             with open(f"/proc/{pid_str}/comm", "r") as f:
                 comm = f.read().strip().lower()
-            if comm in V4L2_APP_NAMES or any(name in comm for name in ("obs", "zoom", "cheese", "vlc")):
-                return True
-        except OSError:
-            pass
-
-        try:
-            with open(f"/proc/{pid_str}/cmdline", "r") as f:
-                cmdline = f.read().replace("\0", " ").lower()
-            if any(name in cmdline for name in ("obs", "zoom", "cheese", "vlc")):
+            if comm in V4L2_APP_NAMES:
                 return True
         except OSError:
             pass
@@ -215,6 +211,9 @@ def main():
 
     if "--wake" in sys.argv or "--activate" in sys.argv:
         try:
+            if not os.path.exists(ACTIVE_FILE):
+                with open(ACTIVE_FILE, "w") as f:
+                    f.write("/dev/video0")
             open(WAKE_FILE, "a").close()
         except Exception:
             pass
@@ -225,6 +224,14 @@ def main():
         signal.signal(signal.SIGUSR1, handle_sigusr1)
     except Exception:
         pass
+
+    # Clean up stale wake/active files from prior session on daemon start
+    for f in (WAKE_FILE, ACTIVE_FILE):
+        if os.path.exists(f):
+            try:
+                os.remove(f)
+            except Exception:
+                pass
 
     log(f"xrdp-v4l2-bridge started (PID {os.getpid()}, MODE={BRIDGE_MODE})")
 
@@ -243,7 +250,9 @@ def main():
                 if proc and proc.poll() is None:
                     our_pids.add(proc.pid)
 
-            v4l2_app_active = is_v4l2_app_running() if BRIDGE_MODE == "auto" else False
+            v4l2_app_active = is_v4l2_app_running(our_pids) if BRIDGE_MODE == "auto" else False
+            wake_active = wake_requested or os.path.exists(WAKE_FILE)
+            app_running = v4l2_app_active or wake_active
 
             # Stop pipelines on video devices that no longer have a matching camera
             active_dev_paths = [f"/dev/video{idx}" for idx in range(num_cams)]
@@ -251,21 +260,34 @@ def main():
                 if dev_path not in active_dev_paths:
                     stop_pipeline(active_relays.pop(dev_path))
 
-            # Check which devices are currently open by a client application
-            devs_in_use = {dev: is_device_in_use_by_client(dev, our_pids) for dev in active_dev_paths}
-
-            # If an active device hint was provided by the shim, prioritize it
+            # Resolve active camera hint (e.g. from shim or --wake)
             active_hint = None
             if os.path.exists(ACTIVE_FILE):
                 try:
                     with open(ACTIVE_FILE, "r") as f:
-                        active_hint = f.read().strip()
+                        raw_hint = f.read().strip()
+                        if raw_hint:
+                            active_hint = os.path.realpath(raw_hint)
                 except Exception:
                     pass
 
-            # If multiple devices are open (e.g. during switching), only the active one should stream
-            in_use_count = sum(1 for v in devs_in_use.values() if v)
-            if in_use_count > 1 and active_hint in devs_in_use and devs_in_use[active_hint]:
+            # If no V4L2 app is running at all and no wake requested, clear active hint
+            if not app_running:
+                active_hint = None
+                if os.path.exists(ACTIVE_FILE):
+                    try:
+                        os.remove(ACTIVE_FILE)
+                    except Exception:
+                        pass
+            elif app_running and not active_hint and active_dev_paths:
+                active_hint = active_dev_paths[0]
+
+            # Check which devices are currently open by a client application
+            devs_in_use = {dev: is_device_in_use_by_client(dev, our_pids) for dev in active_dev_paths}
+
+            # If active_hint is specified, prioritize it
+            if active_hint and active_hint in devs_in_use:
+                devs_in_use[active_hint] = True
                 for d in devs_in_use:
                     if d != active_hint:
                         devs_in_use[d] = False
@@ -277,11 +299,14 @@ def main():
             # only supports streaming one physical camera at a time. Shutting down inactive
             # pipelines immediately frees the client camera hardware and resets PipeWire state.
             for dev_path, relay in list(active_relays.items()):
-                in_use = devs_in_use.get(dev_path, False)
                 proc = relay.get("proc")
                 if proc is not None:
-                    if any_in_use and not in_use:
-                        log(f"Stopping inactive pipeline for {relay.get('cam_name')} -> {dev_path} (another camera in use)")
+                    if app_running and active_hint:
+                        if dev_path != active_hint:
+                            log(f"Stopping inactive pipeline for {relay.get('cam_name')} -> {dev_path} (switched to {active_hint})")
+                            stop_pipeline(relay)
+                    elif not app_running:
+                        log(f"Stopping idle pipeline for {relay.get('cam_name')} -> {dev_path} (no app running)")
                         stop_pipeline(relay)
                     elif not any_in_use and (now - relay.get("last_needed", 0.0) >= 2.0):
                         log(f"Stopping idle pipeline for {relay.get('cam_name')} -> {dev_path}")
@@ -321,15 +346,15 @@ def main():
                     relay["cam_serial"] = cam_serial
                     relay["cam_name"] = cam_name
 
-                in_use = devs_in_use.get(dev_path, False)
-
                 # Determine if camera is needed
-                # Strictly on-demand: camera only runs when an application has opened it.
-                # Never pre-warm on connection; keep client camera hardware OFF until requested.
+                is_needed = False
                 if BRIDGE_MODE == "always":
                     is_needed = True
-                else:  # "auto" and "clients_only"
-                    is_needed = in_use
+                elif app_running:
+                    if active_hint:
+                        is_needed = (dev_path == active_hint)
+                    else:
+                        is_needed = devs_in_use.get(dev_path, False) or (idx == 0)
 
                 if is_needed:
                     relay["last_needed"] = now
@@ -374,7 +399,7 @@ def main():
                     our_pids.add(p.pid)
                     log(f"Pipeline started with PID {p.pid}")
                 elif not is_needed and proc is not None:
-                    if any_in_use or (now - relay.get("last_needed", 0.0) >= 2.0):
+                    if not app_running or (active_hint and dev_path != active_hint) or (now - relay.get("last_needed", 0.0) >= 2.0):
                         stop_pipeline(relay)
 
             # Consume the wake flag once all pipelines are evaluated

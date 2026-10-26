@@ -614,11 +614,15 @@ static void notify_bridge_wake(void) {
 }
 
 static void notify_bridge_active(const char *dev) {
-    if (dev && strstr(dev, "video")) {
-        int fd = open("/tmp/.xrdp-camera-active", O_WRONLY | O_CREAT | O_TRUNC, 0666);
-        if (fd >= 0) {
-            write(fd, dev, strlen(dev));
-            close(fd);
+    if (dev) {
+        char canonical[PATH_MAX];
+        const char *real_dev = realpath(dev, canonical) ? canonical : dev;
+        if (strstr(real_dev, "video")) {
+            int fd = open("/tmp/.xrdp-camera-active", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+            if (fd >= 0) {
+                write(fd, real_dev, strlen(real_dev));
+                close(fd);
+            }
         }
     }
     notify_bridge_wake();

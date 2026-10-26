@@ -5,6 +5,7 @@
 
 # 1. Trigger the camera bridge daemon to start feeding /dev/video* immediately
 if [ -e /dev/video0 ]; then
+    echo -n "/dev/video0" > /tmp/.xrdp-camera-active 2>/dev/null || true
     if [ -x /usr/local/bin/xrdp-v4l2-bridge.py ]; then
         /usr/local/bin/xrdp-v4l2-bridge.py --wake 2>/dev/null || true
     else
