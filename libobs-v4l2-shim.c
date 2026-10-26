@@ -613,6 +613,17 @@ static void notify_bridge_wake(void) {
     if (fd >= 0) close(fd);
 }
 
+static void notify_bridge_active(const char *dev) {
+    if (dev && strstr(dev, "video")) {
+        int fd = open("/tmp/.xrdp-camera-active", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        if (fd >= 0) {
+            write(fd, dev, strlen(dev));
+            close(fd);
+        }
+    }
+    notify_bridge_wake();
+}
+
 int v4l2_open(const char *file, int oflag, ...) {
     mode_t mode = 0;
     if (oflag & O_CREAT) {
@@ -654,7 +665,7 @@ int v4l2_open(const char *file, int oflag, ...) {
     }
     fprintf(stderr, "[libobs-v4l2-shim] v4l2_open(\"%s\", oflag=0x%x) = %d\n", target ? target : "(null)", oflag, fd);
     if (fd >= 0) {
-        notify_bridge_wake();
+        notify_bridge_active(target);
     }
     return fd;
 }
@@ -709,6 +720,11 @@ static int handle_v4l2_ioctl_result(int fd, unsigned long int request, void *arg
         }
     } else if (request == VIDIOC_QUERYCAP && ret == 0) {
         struct v4l2_capability *cap = (struct v4l2_capability *)arg;
+        cap->capabilities |= V4L2_CAP_VIDEO_CAPTURE;
+        cap->device_caps |= V4L2_CAP_VIDEO_CAPTURE;
+        if (cap->card[0] == '\0') {
+            snprintf((char *)cap->card, sizeof(cap->card), "XRDP Camera");
+        }
         cap->driver[sizeof(cap->driver) - 1] = '\0';
         cap->card[sizeof(cap->card) - 1] = '\0';
         cap->bus_info[sizeof(cap->bus_info) - 1] = '\0';
@@ -734,8 +750,22 @@ int v4l2_ioctl(int fd, unsigned long int request, ...) {
     int ret;
     if (real_v4l2_ioctl) {
         ret = real_v4l2_ioctl(fd, request, arg);
+        if (ret < 0 && (request == VIDIOC_G_FMT || request == VIDIOC_S_FMT || request == VIDIOC_REQBUFS || request == VIDIOC_STREAMON)) {
+            for (int retry = 0; retry < 25 && ret < 0; retry++) {
+                notify_bridge_wake();
+                usleep(40000);
+                ret = real_v4l2_ioctl(fd, request, arg);
+            }
+        }
     } else {
         ret = ioctl(fd, request, arg);
+        if (ret < 0 && (request == VIDIOC_G_FMT || request == VIDIOC_S_FMT || request == VIDIOC_REQBUFS || request == VIDIOC_STREAMON)) {
+            for (int retry = 0; retry < 25 && ret < 0; retry++) {
+                notify_bridge_wake();
+                usleep(40000);
+                ret = ioctl(fd, request, arg);
+            }
+        }
     }
 
     return handle_v4l2_ioctl_result(fd, request, arg, ret);
@@ -755,5 +785,12 @@ int ioctl(int fd, unsigned long int request, ...) {
     }
 
     int ret = real_ioctl(fd, request, arg);
+    if (ret < 0 && (request == VIDIOC_G_FMT || request == VIDIOC_S_FMT || request == VIDIOC_REQBUFS || request == VIDIOC_STREAMON)) {
+        for (int retry = 0; retry < 25 && ret < 0; retry++) {
+            notify_bridge_wake();
+            usleep(40000);
+            ret = real_ioctl(fd, request, arg);
+        }
+    }
     return handle_v4l2_ioctl_result(fd, request, arg, ret);
 }
