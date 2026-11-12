@@ -39,7 +39,11 @@ docker compose -f docker-compose.portainer.yml up -d
 
 Then connect with any RDP client to `<host>:3389` and log in.
 
-The image is also published to GHCR: `ghcr.io/jmez11/linux-xrdp-desktop:latest` (private — needs a `read:packages` token).
+The image is publicly available on GHCR as `ghcr.io/jmez11/linux-xrdp-desktop:latest`. No GitHub login or access token is required to pull it:
+
+```bash
+docker pull ghcr.io/jmez11/linux-xrdp-desktop:latest
+```
 
 ## Configuration
 
